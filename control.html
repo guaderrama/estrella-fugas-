@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#111827">
+    <title>Leave Your Light</title>
+    <!-- Fuentes del diseño (también se usan para la imagen de recuerdo) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,500&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Poppins', sans-serif; background-color: #111827; color: #F3F4F6; display: flex; justify-content: center; align-items: center; min-height: 100vh; min-height: 100dvh; margin: 0; padding: 16px; -webkit-tap-highlight-color: transparent; }
+        .container { text-align: center; background-color: #1F2937; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 100%; max-width: 400px; }
+        h1 { font-size: 1.5rem; line-height: 2rem; font-weight: 700; margin: 0 0 0.5rem; }
+        .subtitle { color: #9CA3AF; margin: 0 0 1rem; }
+        textarea { font-family: inherit; font-size: 16px; background-color: #374151; border: 2px solid #4B5563; color: #F3F4F6; border-radius: 0.5rem; padding: 0.75rem; width: 100%; height: 100px; resize: none; transition: border-color 0.3s, box-shadow 0.3s; }
+        textarea:focus { outline: none; border-color: #FBBF24; box-shadow: 0 0 10px #FBBF24; }
+        .counter { text-align: right; font-size: 12px; color: #6B7280; margin-top: 4px; }
+        .counter.limit { color: #FBBF24; }
+        .btn { font-family: inherit; font-size: 1rem; color: white; font-weight: bold; padding: 0.75rem 1.5rem; border-radius: 0.5rem; border: none; cursor: pointer; width: 100%; margin-top: 1rem; transition: background-color 0.3s, transform 0.2s; display: flex; justify-content: center; align-items: center; gap: 0.5rem; text-decoration: none; }
+        .btn:disabled { opacity: 0.7; cursor: default; }
+        .btn-primary { background-color: #D97706; }
+        .btn-primary:hover { background-color: #B45309; }
+        .btn-secondary { background-color: #4B5563; }
+        .btn-secondary:hover { background-color: #6B7280; }
+        .btn-social { background-color: transparent; border: 2px solid #818cf8; color: #c7d2fe; }
+        .btn-social:hover { background-color: #4f46e5; border-color: #a5b4fc; }
+        .btn:active { transform: scale(0.98); }
+        #statusMessage { margin: 1rem 0 0; color: #FBBF24; font-weight: 500; min-height: 20px; }
+        #statusMessage.error { color: #FCA5A5; }
+        #downloadView { display: none; }
+        #previewImage { max-width: 100%; border-radius: 0.5rem; border: 2px solid #4B5563; margin-bottom: 1rem; }
+        #mobileSaveInstruction { display: none; margin-top: 1rem; padding: 0.75rem; background: #1E293B; border: 2px dashed #475569; border-radius: 0.5rem; }
+        #mobileSaveInstruction p { margin: 0; color: #FBBF24; font-weight: 600; font-size: 1.125rem; animation: pulse 2s ease-in-out infinite; }
+        @keyframes pulse { 50% { opacity: 0.5; } }
+        #sentNote { color: #9CA3AF; font-size: 0.875rem; margin: 0 0 1rem; }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="messageView">
+        <h1>Leave Your Light</h1>
+        <p class="subtitle">Write a message of love or faith.</p>
+
+        <textarea id="messageInput" placeholder="Your message..." maxlength="140"></textarea>
+        <div class="counter" id="counter">0 / 140</div>
+
+        <button id="sendButton" class="btn btn-primary">Send My Light</button>
+
+        <p id="statusMessage"></p>
+    </div>
+
+    <div class="container" id="downloadView">
+        <h1>Thank you for your light!</h1>
+        <p class="subtitle" id="souvenirText">Here is your personalized souvenir.</p>
+        <p id="sentNote"></p>
+        <img id="previewImage" src="" alt="Personalized souvenir">
+
+        <a id="downloadLink" href="#" download="souvenir-guaderrama-gallery.png" class="btn btn-primary">Download Image</a>
+
+        <div id="mobileSaveInstruction"><p>Tap and hold image to save</p></div>
+
+        <a id="instagramLink" href="https://www.instagram.com/ivanguaderramaart/" target="_blank" rel="noopener" class="btn btn-social">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+            Follow us on Instagram
+        </a>
+
+        <button id="newButton" class="btn btn-secondary">Send another message</button>
+    </div>
+
+    <canvas id="imageCanvas" style="display: none;"></canvas>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { firebaseConfig, MESSAGES_COLLECTION, MAX_MESSAGE_CHARS } from "./firebase-config.js";
+
+        const SOUVENIR_BACKGROUND = 'https://firebasestorage.googleapis.com/v0/b/instalacionmariposas.firebasestorage.app/o/C5ABD578-447A-4160-BA4A-7EA2819A924C.png?alt=media&token=959ecc5c-8e0e-4845-82a9-b4b076b5628d';
+        const SEND_TIMEOUT_MS = 8000; // Si el servidor no confirma en este tiempo, se avisa en vez de quedarse "Sending..." para siempre
+
+        const messageView = document.getElementById('messageView');
+        const downloadView = document.getElementById('downloadView');
+        const messageInput = document.getElementById('messageInput');
+        const counter = document.getElementById('counter');
+        const sendButton = document.getElementById('sendButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const newButton = document.getElementById('newButton');
+        const previewImage = document.getElementById('previewImage');
+        const downloadLink = document.getElementById('downloadLink');
+        const souvenirText = document.getElementById('souvenirText');
+        const sentNote = document.getElementById('sentNote');
+
+        let messagesRef = null;
+        let auth = null;
+
+        function setStatus(text, isError = false) {
+            statusMessage.textContent = text;
+            statusMessage.classList.toggle('error', isError);
+        }
+
+        // Se conecta con inicio de sesión anónimo; si no hay internet al abrir, sigue intentando solo
+        async function initializeFirebase(attempt = 1) {
+            try {
+                if (!messagesRef) {
+                    const app = initializeApp(firebaseConfig);
+                    const db = getFirestore(app);
+                    auth = getAuth(app);
+                    setLogLevel('error');
+                    messagesRef = collection(db, MESSAGES_COLLECTION);
+                }
+                await signInAnonymously(auth);
+                if (statusMessage.classList.contains('error')) setStatus('');
+            } catch (error) {
+                console.error("Firebase initialization error:", error);
+                const wait = Math.min(30, 2 ** attempt);
+                setStatus(`No connection, retrying in ${wait} s…`, true);
+                setTimeout(() => initializeFirebase(attempt + 1), wait * 1000);
+            }
+        }
+
+        // La imagen de fondo y las fuentes se cargan desde el principio, para que el recuerdo salga rápido y con la letra correcta
+        const backgroundImage = new Image();
+        backgroundImage.crossOrigin = 'anonymous';
+        const backgroundReady = new Promise((resolve) => {
+            backgroundImage.onload = () => resolve(true);
+            backgroundImage.onerror = () => resolve(false);
+        });
+        backgroundImage.src = SOUVENIR_BACKGROUND;
+        const fontsReady = Promise.all([
+            document.fonts.load("italic 500 60px 'Playfair Display'"),
+            document.fonts.load("400 30px 'Poppins'")
+        ]).catch(() => {});
+
+        async function generateSouvenirImage(text) {
+            await fontsReady;
+            const loaded = await backgroundReady;
+            if (!loaded) return false;
+            const canvas = document.getElementById('imageCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = backgroundImage.width;
+            canvas.height = backgroundImage.height;
+            ctx.drawImage(backgroundImage, 0, 0);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = "italic 500 60px 'Playfair Display'";
+            wrapText(ctx, `"${text}"`, canvas.width / 2, canvas.height / 2, canvas.width * 0.8, 70);
+            ctx.font = "400 30px 'Poppins'";
+            ctx.fillText("Iván Guaderrama Gallery", canvas.width / 2, canvas.height - 80);
+            const dataUrl = canvas.toDataURL('image/png');
+            previewImage.src = dataUrl;
+            downloadLink.href = dataUrl;
+            return true;
+        }
+
+        function wrapText(context, text, x, y, maxWidth, lineHeight) {
+            const words = text.split(' ');
+            let line = '';
+            const lines = [];
+            for (let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                if (context.measureText(testLine).width > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = words[n] + ' ';
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+            let startY = y - ((lines.length - 1) * lineHeight) / 2;
+            for (const l of lines) {
+                context.fillText(l.trim(), x, startY);
+                startY += lineHeight;
+            }
+        }
+
+        function showSouvenirView(hasImage, delivered) {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            previewImage.style.display = hasImage ? 'block' : 'none';
+            downloadLink.style.display = hasImage && !isMobile ? 'flex' : 'none';
+            document.getElementById('mobileSaveInstruction').style.display = hasImage && isMobile ? 'block' : 'none';
+            souvenirText.textContent = hasImage ? 'Here is your personalized souvenir.' : 'Your light is on its way.';
+            sentNote.textContent = delivered ? '' : 'Your connection is slow: your light will appear on the wall as soon as it reconnects.';
+            messageView.style.display = 'none';
+            downloadView.style.display = 'block';
+        }
+
+        messageInput.addEventListener('input', () => {
+            const n = messageInput.value.length;
+            counter.textContent = `${n} / ${MAX_MESSAGE_CHARS}`;
+            counter.classList.toggle('limit', n >= MAX_MESSAGE_CHARS);
+        });
+
+        sendButton.addEventListener('click', async () => {
+            const text = messageInput.value.replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE_CHARS);
+            if (text === '') { setStatus('Please write a message.'); return; }
+            if (!messagesRef) { setStatus('Cannot send yet: connecting…', true); return; }
+            if (navigator.onLine === false) { setStatus('No internet connection. Please try again.', true); return; }
+
+            sendButton.disabled = true;
+            sendButton.textContent = 'Sending...';
+            setStatus('');
+            try {
+                // Firestore guarda el mensaje aunque la señal sea mala; si no confirma rápido, se avisa en vez de esperar para siempre
+                const sent = addDoc(messagesRef, { text, createdAt: serverTimestamp(), t: Date.now() });
+                sent.catch((error) => console.error("Error sending message:", error));
+                const delivered = await Promise.race([sent.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), SEND_TIMEOUT_MS))]);
+                const hasImage = await generateSouvenirImage(text);
+                showSouvenirView(hasImage, delivered);
+            } catch (error) {
+                console.error("Error sending message or generating image:", error);
+                setStatus('An error occurred. Please try again.', true);
+            } finally {
+                sendButton.disabled = false;
+                sendButton.textContent = 'Send My Light';
+            }
+        });
+
+        newButton.addEventListener('click', () => {
+            messageInput.value = '';
+            counter.textContent = `0 / ${MAX_MESSAGE_CHARS}`;
+            counter.classList.remove('limit');
+            setStatus('');
+            downloadView.style.display = 'none';
+            messageView.style.display = 'block';
+        });
+
+        initializeFirebase();
+    </script>
+</body>
+</html>

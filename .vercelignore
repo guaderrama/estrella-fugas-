@@ -1,0 +1,4 @@
+# Versiones originales: se guardan en el repo pero no se publican
+# (la pantalla original borra los mensajes al instante y le quitaría las luces a la pantalla nueva)
+versiones-anteriores/
+firestore.rules

@@ -1,0 +1,15 @@
+rules_version = '2';
+// Reglas recomendadas para el Mural de Luz.
+// OJO: no están publicadas. Hoy el proyecto "instalacionmariposas" tiene reglas abiertas y lo comparten
+// el Corazón de Mariposas y CaboHealth; antes de publicar estas hay que juntarlas con las de ellos.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Mensajes: el celular los crea (texto de hasta 140 letras) y la pantalla los lee y los borra.
+    match /mural-de-luz-mensajes/{messageId} {
+      allow read, delete: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 140;
+    }
+  }
+}
