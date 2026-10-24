@@ -40,7 +40,7 @@
 </head>
 <body>
     <div id="status" class="glass" title="F: pantalla completa · H: ocultar · Q: ocultar QR">
-        <i class="dot"></i><span id="netLabel">Conectando</span><span class="sep">·</span><span id="lightsLabel">0 luces</span>
+        <i class="dot"></i><span id="netLabel">Conectando</span><span class="sep">·</span><span id="lightsLabel">0 luces</span><span class="sep" id="queueSep" hidden>·</span><span id="queueLabel" hidden></span>
     </div>
 
     <div id="qr-box" class="glass">
@@ -65,10 +65,11 @@
         const SPARKS_PER_MESSAGE = 700;     // Chispas de cada explosión (el original lanzaba 3,200 y se congelaba)
         const MAX_SPARKS = 3000;            // Tope de chispas en pantalla al mismo tiempo
         const STAR_INTERVAL_MS = 1800;      // Si llegan varios mensajes juntos, las estrellas salen una tras otra
-        const MESSAGE_SHOW_MS = 7000;       // Cuánto se lee cada mensaje (se acorta si hay fila)
-        const MAX_QUEUE = 40;               // Mensajes en fila como máximo
-        const BACKLOG_MAX_AGE_MS = 120000;  // Al abrir la pantalla, se muestran los mensajes de los últimos 2 minutos
-        const DELETE_DELAY_MS = 10000;      // Espera antes de borrar un mensaje, para que otras pantallas también lo reciban
+        const CROWD_STAR_INTERVAL_MS = 800; // ...y más seguido cuando hay mucha gente
+        const CROWD_START = 3;              // Con esta fila o más, salen 2 mensajes a la vez (más pequeños)
+        const CROWD_FULL = 8;               // Con esta fila o más, salen 3 a la vez
+        const MAX_QUEUE = 2000;             // Solo protege de alguien que mande miles a propósito; la gente normal nunca llega a este tope
+        const BACKLOG_MAX_AGE_MS = 30 * 60 * 1000; // Al abrir la pantalla, salen los mensajes que nadie alcanzó a ver en la última media hora
         const STEP_MS = 1000 / 60;          // La animación avanza en pasos fijos: se ve igual en pantallas de 60 o 120 Hz
         const TEXT_FONT = '"Cormorant Garamond", Georgia, "Times New Roman", serif';
         const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -82,6 +83,7 @@
         ];
 
         const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+        const len = (x, y) => Math.sqrt(x * x + y * y); // Mucho más rápido que Math.hypot en las partes que corren miles de veces por segundo
         const rand = (min, max) => min + Math.random() * (max - min);
         const pick = (list) => list[Math.floor(Math.random() * list.length)];
         function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
@@ -92,6 +94,8 @@
         const statusEl = document.getElementById('status');
         const netLabel = document.getElementById('netLabel');
         const lightsLabel = document.getElementById('lightsLabel');
+        const queueSep = document.getElementById('queueSep');
+        const queueLabel = document.getElementById('queueLabel');
         const qrBox = document.getElementById('qr-box');
 
         let W = window.innerWidth;
@@ -100,6 +104,8 @@
         let heartScale = 1;
         let steps = 0;
         let lightsReceived = 0;
+        let dpr = 1;               // Pixeles reales por pixel de la página (máximo 2)
+        let fontEpoch = 0;         // Sube cuando termina de cargar la letra, para volver a acomodar los mensajes
 
         // ================= Forma del corazón =================
         const heartX = (t) => 16 * Math.pow(Math.sin(t), 3);
@@ -169,22 +175,22 @@
             const ty = H / 2 + (home.y - H / 2) * beat;
             // Buscar su lugar, frenando al llegar
             let dx = tx - p.x; let dy = ty - p.y;
-            const d = Math.hypot(dx, dy) || 1;
+            const d = len(dx, dy) || 1;
             const speed = d < 150 ? (d / 150) * p.maxSpeed : p.maxSpeed;
             let sx = (dx / d) * speed - p.vx; let sy = (dy / d) * speed - p.vy;
-            const sm = Math.hypot(sx, sy);
+            const sm = len(sx, sy);
             if (sm > 0.2) { sx = (sx / sm) * 0.2; sy = (sy / sm) * 0.2; }
             // Un flotar suave, como el ruido del original pero mucho más barato
             const a = (Math.sin(p.x * 0.011 + time * 0.35 + p.phase) + Math.cos(p.y * 0.013 - time * 0.27)) * Math.PI;
             p.vx += sx + Math.cos(a) * 0.15; p.vy += sy + Math.sin(a) * 0.15;
-            const v = Math.hypot(p.vx, p.vy);
+            const v = len(p.vx, p.vy);
             if (v > p.maxSpeed) { p.vx = (p.vx / v) * p.maxSpeed; p.vy = (p.vy / v) * p.maxSpeed; }
             p.x += p.vx; p.y += p.vy;
             if (p.boost > 0) p.boost = Math.max(0, p.boost - 0.03);
         }
 
-        function drawParticle(p) {
-            const size = p.size * (1 + p.boost) * 2.6 * Math.max(0.8, unit);
+        function drawParticle(p, scale) {
+            const size = p.size * (1 + p.boost) * scale;
             ctx.drawImage(p.glow, p.x - size / 2, p.y - size / 2, size, size);
         }
 
@@ -195,14 +201,14 @@
         let sparkCount = 0;
         let joiners = [];
 
-        function launchStar(text) {
+        function launchStar(message) {
             let x, y;
             if (Math.random() > 0.5) { x = rand(0, W); y = Math.random() > 0.5 ? 0 : H; }
             else { x = Math.random() > 0.5 ? 0 : W; y = rand(0, H); }
             const tx = W / 2; const ty = H / 2;
-            const d = Math.hypot(tx - x, ty - y) || 1;
+            const d = len(tx - x, ty - y) || 1;
             const speed = rand(5, 8) * Math.max(0.8, unit);
-            shootingStars.push({ x, y, tx, ty, vx: ((tx - x) / d) * speed, vy: ((ty - y) / d) * speed, size: rand(8, 12), trail: [], text });
+            shootingStars.push({ x, y, tx, ty, vx: ((tx - x) / d) * speed, vy: ((ty - y) / d) * speed, size: rand(8, 12), trail: [], message });
         }
 
         function explode(x, y) {
@@ -230,9 +236,9 @@
                 s.trail.push({ x: s.x, y: s.y });
                 if (s.trail.length > 30) s.trail.shift();
                 s.x += s.vx; s.y += s.vy;
-                if (Math.hypot(s.x - s.tx, s.y - s.ty) < 20) {
+                if (len(s.x - s.tx, s.y - s.ty) < 20) {
                     explode(s.tx, s.ty);
-                    showMessage(s.text);
+                    showMessage(s.message);
                     lightsReceived++;
                     setText(lightsLabel, lightsReceived === 1 ? '1 luz' : `${lightsReceived} luces`);
                     shootingStars.splice(i, 1);
@@ -242,12 +248,16 @@
                 const pulse = pulses[i];
                 pulse.radius += 15 * Math.max(0.8, unit);
                 pulse.life -= 0.04;
-                // Las partículas que toca el anillo brillan y se empujan un poco
+                // Las partículas que toca el anillo brillan y se empujan un poco (se compara al cuadrado para no sacar raíces de más)
+                const inner = Math.max(0, pulse.radius - 20); const outer = pulse.radius + 20;
+                const inner2 = inner * inner; const outer2 = outer * outer;
                 for (const p of particles) {
-                    const d = Math.hypot(p.x - pulse.x, p.y - pulse.y);
-                    if (d > pulse.radius - 20 && d < pulse.radius + 20) {
+                    const dx = p.x - pulse.x; const dy = p.y - pulse.y;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 > inner2 && d2 < outer2) {
+                        const d = Math.sqrt(d2) || 1;
                         p.boost = 1.5;
-                        p.vx += ((p.x - pulse.x) / (d || 1)) * 0.45; p.vy += ((p.y - pulse.y) / (d || 1)) * 0.45;
+                        p.vx += (dx / d) * 0.45; p.vy += (dy / d) * 0.45;
                     }
                 }
                 if (pulse.life <= 0) pulses.splice(i, 1);
@@ -269,13 +279,13 @@
                 const j = joiners[i];
                 const home = homeOf(j);
                 const dx = home.x - j.x; const dy = home.y - j.y;
-                const d = Math.hypot(dx, dy) || 1;
+                const d = len(dx, dy) || 1;
                 const speed = d < 100 ? (d / 100) * 0.8 : 0.8;
                 let sx = (dx / d) * speed - j.vx; let sy = (dy / d) * speed - j.vy;
-                const sm = Math.hypot(sx, sy);
+                const sm = len(sx, sy);
                 if (sm > 0.02) { sx = (sx / sm) * 0.02; sy = (sy / sm) * 0.02; }
                 j.vx += sx; j.vy += sy;
-                const v = Math.hypot(j.vx, j.vy);
+                const v = len(j.vx, j.vy);
                 if (v > 0.8) { j.vx = (j.vx / v) * 0.8; j.vy = (j.vy / v) * 0.8; }
                 // Para que no tarde una eternidad en pantallas grandes, se apura un poco cuando está lejos
                 j.x += j.vx * Math.max(1, d / 300); j.y += j.vy * Math.max(1, d / 300);
@@ -326,87 +336,208 @@
         }
 
         // ================= Mensajes =================
-        const starQueue = [];      // Mensajes esperando su estrella fugaz
-        const textQueue = [];      // Mensajes esperando a ser leídos en pantalla
-        let currentText = null;    // { text, age, duration, lines }
+        // Ningún mensaje se pierde: todos esperan su turno. Si hay mucha gente, salen 2 o 3 a la vez (más pequeños) en vez de uno por uno.
+        const starQueue = [];      // Mensajes esperando su estrella fugaz: { text, ref }
+        const textQueue = [];      // Mensajes cuya estrella ya llegó, esperando lugar para leerse
+        const shownTexts = [];     // Mensajes que se están leyendo ahora mismo
+        const seenIds = new Set(); // Para no repetir un mensaje si la conexión se reinicia
         let lastStarTime = -Infinity;
+        let crowd = false;         // Modo "mucha gente"
+        const SOON_STEPS = 90;     // ~1.5 s: lo que tarda una estrella en llegar al corazón
+        // Dónde sale cada mensaje cuando hay varios a la vez (arriba, abajo y al centro), en proporción al tamaño de la pantalla
+        const LANES = [-0.2, 0.2, 0];
 
         // Cualquiera puede escribir en Firestore: se limpia el texto para que nada raro rompa la pantalla
         const INVISIBLE_CHARS = new RegExp('[\\u0000-\\u001f\\u007f\\u200b-\\u200f\\u2028-\\u202e]', 'g');
         function cleanText(value) {
-            return String(value ?? '').replace(INVISIBLE_CHARS, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE_CHARS);
+            const text = String(value ?? '').slice(0, MAX_MESSAGE_CHARS * 4).replace(INVISIBLE_CHARS, ' ').replace(/\s+/g, ' ').trim();
+            return Array.from(text).slice(0, MAX_MESSAGE_CHARS).join(''); // Por letras completas, para no dejar medio emoji al final
         }
 
-        function enqueueMessage(raw) {
-            const text = cleanText(raw) || pick(FALLBACK_VERSES);
-            if (starQueue.length >= MAX_QUEUE) starQueue.shift();
-            starQueue.push(text);
+        function enqueueMessage(raw, ref = null) {
+            if (starQueue.length >= MAX_QUEUE) return false;
+            starQueue.push({ text: cleanText(raw) || pick(FALLBACK_VERSES), ref });
+            return true;
+        }
+
+        // Mensajes que todavía no salen en pantalla (en fila o con su estrella en camino)
+        const waitingCount = () => starQueue.length + shootingStars.length + textQueue.length;
+
+        function updateCrowd() {
+            const waiting = starQueue.length + textQueue.length;
+            if (!crowd && waiting >= CROWD_START) crowd = true;
+            else if (crowd && waiting === 0) crowd = false;
+        }
+
+        const lanesAllowed = () => !crowd ? 1 : (starQueue.length + textQueue.length >= CROWD_FULL ? 3 : 2);
+
+        // Cuántos mensajes más caben en pantalla ahora o en el próximo segundo y medio
+        function roomSoon() {
+            const busy = shownTexts.filter(m => m.duration - m.age > SOON_STEPS);
+            if (!crowd) return busy.length === 0 ? 1 : 0;
+            if (busy.some(m => !m.small)) return 0;
+            return Math.max(0, lanesAllowed() - busy.length);
         }
 
         function releaseStars(now) {
-            // Las estrellas salen una tras otra, nunca todas juntas
-            if (starQueue.length === 0 || shootingStars.length >= 2 || now - lastStarTime < STAR_INTERVAL_MS) return;
+            if (starQueue.length === 0) return;
+            if (now - lastStarTime < (crowd ? CROWD_STAR_INTERVAL_MS : STAR_INTERVAL_MS)) return;
+            // Solo sale una estrella si su mensaje va a tener lugar al llegar: así cada mensaje aparece en cuanto llega su luz
+            if (shootingStars.length + textQueue.length >= roomSoon()) return;
             launchStar(starQueue.shift());
             lastStarTime = now;
         }
 
-        function showMessage(text) {
-            if (textQueue.length >= MAX_QUEUE) textQueue.shift();
-            textQueue.push(text);
+        function showMessage(message) {
+            textQueue.push(message);
+        }
+
+        function freeLane() {
+            for (let i = 0; i < lanesAllowed(); i++) if (!shownTexts.some(m => m.lane === i)) return i;
+            return -1;
+        }
+
+        function canStartText() {
+            if (!crowd) return shownTexts.length === 0;
+            if (shownTexts.some(m => !m.small)) return false;
+            return freeLane() !== -1;
+        }
+
+        function startText(message, lane) {
+            const small = crowd;
+            const chars = message.text.length;
+            // Cada mensaje dura según su largo: los largos se alcanzan a leer completos
+            const hurry = waitingCount() >= 30 ? 0.85 : 1;
+            const seconds = small ? clamp((2 + chars * 0.035) * hurry, 3, 6.5) : clamp(2.5 + chars * 0.05, 4, 9.5);
+            const duration = Math.round(seconds * 1000 / STEP_MS);
+            // Se escribe letra por letra, pero nunca tarda más de un tercio del tiempo: el resto se lee completo
+            const typeSteps = Math.max(1, Math.min((chars + 2) * 3, duration / 3));
+            shownTexts.push({ text: message.text, age: 0, duration, typeSteps, small, lane });
+            // Ya salió en pantalla: ahora sí se borra de Firebase (y el celular de la persona se entera de que su luz llegó)
+            if (message.ref) deleteDoc(message.ref).catch(() => {});
         }
 
         function updateText() {
-            if (!currentText && textQueue.length > 0) {
-                // Si hay fila, cada mensaje se queda menos tiempo para que todos alcancen a leerse
-                const duration = Math.max(3500, MESSAGE_SHOW_MS - textQueue.length * 700);
-                currentText = { text: textQueue.shift(), age: 0, duration: duration / STEP_MS };
+            updateCrowd();
+            // Si de pronto llega mucha gente, el mensaje grande se despide un poco antes para dar paso a los demás
+            // (pero nunca antes de que se alcance a leer completo)
+            if (crowd) for (const m of shownTexts) {
+                if (m.small) continue;
+                const readSteps = m.typeSteps + (1 + m.text.length * 0.03) * 60;
+                if (m.age > readSteps) m.duration = Math.min(m.duration, m.age + 60);
             }
-            if (currentText) {
-                currentText.age++;
-                if (currentText.age > currentText.duration) currentText = null;
+            while (textQueue.length > 0 && canStartText()) {
+                // El lugar se elige antes de sacar el mensaje de la fila: al sacarlo la fila se achica y podrían caber menos
+                const lane = crowd ? freeLane() : -1;
+                startText(textQueue.shift(), lane);
             }
+            for (let i = shownTexts.length - 1; i >= 0; i--) {
+                const m = shownTexts[i];
+                m.age++;
+                if (m.age > m.duration) shownTexts.splice(i, 1);
+            }
+            // El indicador solo se toca cuando cambia (tocar la página 60 veces por segundo la hace trabajar de más)
+            const waiting = waitingCount();
+            if (queueLabel.hidden !== (waiting === 0)) queueSep.hidden = queueLabel.hidden = waiting === 0;
+            if (waiting > 0) setText(queueLabel, `${waiting} en fila`);
         }
 
         function wrapLines(text, maxWidth) {
             const lines = []; let line = '';
-            text.split(' ').forEach(word => {
+            for (let word of text.split(' ')) {
+                // Una palabra larguísima (como "jajajaja…" o un enlace) se parte para que no se salga de la pantalla
+                // (se cuenta por letras completas, para no partir un emoji a la mitad)
+                let chars = Array.from(word);
+                while (chars.length > 1 && ctx.measureText(word).width > maxWidth) {
+                    let cut = chars.length - 1;
+                    while (cut > 1 && ctx.measureText(chars.slice(0, cut).join('')).width > maxWidth) cut--;
+                    if (line) { lines.push(line); line = ''; }
+                    lines.push(chars.slice(0, cut).join(''));
+                    chars = chars.slice(cut);
+                    word = chars.join('');
+                }
                 const test = line ? `${line} ${word}` : word;
                 if (line && ctx.measureText(test).width > maxWidth) { lines.push(line); line = word; } else { line = test; }
-            });
+            }
             if (line) lines.push(line);
             return lines;
         }
 
         function drawText() {
-            if (!currentText) return;
-            const c = currentText;
-            const fadeIn = clamp(c.age / 30, 0, 1);
-            const fadeOut = clamp((c.duration - c.age) / 60, 0, 1);
+            for (const m of shownTexts) drawMessage(m);
+        }
+
+        // Cada renglón se dibuja UNA sola vez en lienzos escondidos (el brillo dorado y la letra nítida) y en cada cuadro solo se copia:
+        // dibujar letras con brillo 60 veces por segundo es de lo más pesado para la computadora, sobre todo con emojis
+        function renderLine(line, chars, fontSize, blur) {
+            const font = `italic 500 ${fontSize}px ${TEXT_FONT}`;
+            ctx.font = font;
+            const width = Math.max(1, Math.ceil(ctx.measureText(line).width));
+            // Cuánto mide el renglón con 1, 2, 3… letras: así se revela letra por letra sin volver a dibujar
+            const prefix = [0];
+            for (let k = 1; k <= chars.length; k++) prefix.push(ctx.measureText(chars.slice(0, k).join('')).width);
+            const h = Math.ceil(fontSize * 1.6);
+            const pad = Math.ceil(blur * 1.5); // Espacio para el brillo alrededor de las letras
+            // El brillo es borroso de todos modos: se guarda a resolución normal (pesa 4 veces menos)
+            const glow = document.createElement('canvas');
+            glow.width = width + pad * 2; glow.height = h + pad * 2;
+            const g = glow.getContext('2d');
+            g.font = font; g.textBaseline = 'middle';
+            g.shadowBlur = blur; g.shadowColor = 'rgba(255, 210, 120, 0.9)';
+            g.fillStyle = 'rgb(255, 223, 140)';
+            g.fillText(line, pad, pad + h / 2);
+            // La letra nítida va a la resolución real de la pantalla
+            const crisp = document.createElement('canvas');
+            crisp.width = Math.ceil((width + 4) * dpr); crisp.height = Math.ceil(h * dpr);
+            const c = crisp.getContext('2d');
+            c.scale(dpr, dpr);
+            c.font = font; c.textBaseline = 'middle';
+            c.fillStyle = 'rgb(255, 250, 235)';
+            c.fillText(line, 2, h / 2);
+            return { glow, crisp, width, prefix, count: chars.length, h, pad };
+        }
+
+        function drawMessage(m) {
+            const fadeIn = clamp(m.age / 30, 0, 1);
+            const fadeOut = clamp((m.duration - m.age) / 60, 0, 1);
             const alpha = Math.min(fadeIn, fadeOut);
-            const fontSize = clamp(W / 34, 26, 72); // Grande para que se lea en un proyector
-            ctx.save();
-            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.font = `italic 500 ${fontSize}px ${TEXT_FONT}`;
-            const lines = wrapLines(`“${c.text}”`, W * 0.7);
+            if (alpha <= 0) return;
+            // Grande para que se lea en un proyector; más pequeño cuando salen varios a la vez
+            const fontSize = m.small ? clamp(W / 52, 20, 46) : clamp(W / 34, 26, 72);
+            // Los renglones se preparan una sola vez (y otra vez solo si cambia el tamaño de la pantalla o termina de cargar la letra)
+            const layoutKey = `${W}|${dpr}|${fontSize}|${fontEpoch}`;
+            if (m.layoutKey !== layoutKey) {
+                ctx.font = `italic 500 ${fontSize}px ${TEXT_FONT}`;
+                const lines = wrapLines(`“${m.text}”`, W * (m.small ? 0.6 : 0.7));
+                const chars = lines.map(line => Array.from(line)); // Letras completas: al escribirse, un emoji nunca sale partido
+                // El brillo se mide en pixeles reales, como en el dibujo original
+                const blur = (m.small ? 20 : 30) / dpr;
+                m.layout = { lines: lines.map((line, i) => renderLine(line, chars[i], fontSize, blur)), total: chars.reduce((sum, c) => sum + c.length + 1, -1) };
+                m.layoutKey = layoutKey;
+            }
+            const { lines, total } = m.layout;
             const lineHeight = fontSize * 1.2;
-            const top = H / 2 - ((lines.length - 1) * lineHeight) / 2;
-            const glow = 0.75 + 0.25 * Math.sin(steps * 0.1);
-            // Se escribe letra por letra; cada renglón ya sabe dónde empieza, así el texto no se recorre mientras aparece
-            let remaining = Math.floor(c.age / 3);
-            lines.forEach((line, i) => {
-                const part = line.slice(0, Math.max(0, remaining));
-                remaining -= line.length + 1;
-                if (!part) return;
-                const x = W / 2 - ctx.measureText(line).width / 2;
-                const y = top + i * lineHeight;
-                ctx.shadowBlur = 30; ctx.shadowColor = `rgba(255, 210, 120, ${alpha * glow * 0.9})`;
-                ctx.fillStyle = `rgba(255, 223, 140, ${alpha})`;
-                ctx.fillText(part, x, y);
-                ctx.shadowBlur = 0;
-                ctx.fillStyle = `rgba(255, 250, 235, ${alpha * 0.9})`;
-                ctx.fillText(part, x, y);
+            const centerY = H / 2 + (m.small ? LANES[m.lane] * Math.min(W, H) : 0);
+            const top = centerY - ((lines.length - 1) * lineHeight) / 2;
+            const glowPulse = 0.75 + 0.25 * Math.sin(steps * 0.1);
+            let remaining = Math.floor(clamp(m.age / m.typeSteps, 0, 1) * total);
+            lines.forEach((L, i) => {
+                const k = Math.min(L.count, remaining);
+                remaining -= L.count + 1;
+                if (k <= 0) return;
+                const complete = k >= L.count;
+                const w = complete ? L.width : L.prefix[k];
+                // Cada renglón empieza siempre en el mismo lugar, así el texto no se recorre mientras aparece
+                const x = W / 2 - L.width / 2;
+                const y = top + i * lineHeight - L.h / 2;
+                const gw = Math.min(L.glow.width, L.pad + w + (complete ? L.pad : 0));
+                ctx.globalAlpha = alpha * glowPulse;
+                ctx.drawImage(L.glow, 0, 0, gw, L.glow.height, x - L.pad, y - L.pad, gw, L.glow.height);
+                const cw = Math.min(L.crisp.width / dpr, w + (complete ? 4 : 2));
+                ctx.globalAlpha = alpha * 0.9;
+                ctx.drawImage(L.crisp, 0, 0, cw * dpr, L.crisp.height, x - 2, y, cw, L.h);
             });
-            ctx.restore();
+            ctx.globalAlpha = 1;
         }
 
         // ================= Firebase =================
@@ -436,9 +567,10 @@
             }
         }
 
+        // Se usa la hora del servidor (la del celular puede estar mal); la del celular solo si falta la otra
         function createdMillis(data) {
-            if (typeof data.t === 'number') return data.t;
             if (data.createdAt && typeof data.createdAt.toMillis === 'function') return data.createdAt.toMillis();
+            if (typeof data.t === 'number') return data.t;
             return 0;
         }
 
@@ -451,15 +583,16 @@
                 const isFirst = !gotServerSnapshot;
                 const now = Date.now();
                 snapshot.docChanges()
-                    .filter(change => change.type === 'added')
-                    .map(change => ({ ref: change.doc.ref, data: change.doc.data({ serverTimestamps: 'estimate' }) || {} }))
-                    .sort((a, b) => createdMillis(a.data) - createdMillis(b.data))
-                    .forEach(({ ref: docRef, data }) => {
-                        // Al abrir la pantalla solo se muestran los mensajes recientes; los viejos se limpian sin mostrarse
-                        const show = !isFirst || now - createdMillis(data) < BACKLOG_MAX_AGE_MS;
-                        if (show) enqueueMessage(data.text);
-                        // Se borra después de unos segundos para que otras pantallas abiertas también lo reciban
-                        setTimeout(() => deleteDoc(docRef).catch(() => {}), show ? DELETE_DELAY_MS : 0);
+                    .filter(change => change.type === 'added' && !seenIds.has(change.doc.id))
+                    .map(change => ({ id: change.doc.id, ref: change.doc.ref, data: change.doc.data({ serverTimestamps: 'estimate' }) || {} }))
+                    // En orden de llegada; si dos llegan en el mismo instante, desempata la hora del celular
+                    .sort((a, b) => (createdMillis(a.data) - createdMillis(b.data)) || ((Number(a.data.t) || 0) - (Number(b.data.t) || 0)))
+                    .forEach(({ id, ref: docRef, data }) => {
+                        seenIds.add(id);
+                        // Al abrir la pantalla, los mensajes muy viejos se limpian sin mostrarse
+                        if (isFirst && now - createdMillis(data) >= BACKLOG_MAX_AGE_MS) { deleteDoc(docRef).catch(() => {}); return; }
+                        // El mensaje se queda en Firebase hasta que sale en pantalla: si la pantalla se recarga, no se pierde
+                        enqueueMessage(data.text, docRef);
                     });
                 if (!snapshot.metadata.fromCache) gotServerSnapshot = true;
             }, (error) => {
@@ -472,13 +605,14 @@
         // ================= Pantalla =================
         function resize() {
             W = window.innerWidth; H = window.innerHeight;
-            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            dpr = Math.min(2, window.devicePixelRatio || 1);
             canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             unit = clamp(Math.min(W, H) / 800, 0.6, 2.2);
             heartScale = Math.min(W, H) * 0.028;
             // Las partículas (y las luces doradas acumuladas) se acomodan solas a su nuevo lugar; no se pierde nada
             buildSky();
+            needsRender = true;
         }
 
         async function keepScreenOn() {
@@ -508,6 +642,7 @@
         let accumulator = 0;
         let frame = 0;
         let animationErrors = 0;
+        let needsRender = true;    // Al cambiar el tamaño, el lienzo se borra y hay que volver a dibujar
 
         function step() {
             steps++;
@@ -529,7 +664,8 @@
                 ctx.fillRect(s.x * W, s.y * H, s.r * 1.6, s.r * 1.6);
             }
             ctx.globalAlpha = 1;
-            for (const p of particles) drawParticle(p);
+            const scale = 2.6 * Math.max(0.8, unit);
+            for (const p of particles) drawParticle(p, scale);
             drawEffects();
             drawText();
         }
@@ -543,7 +679,8 @@
                 let n = 0;
                 while (accumulator >= STEP_MS && n < 5) { step(); accumulator -= STEP_MS; n++; }
                 if (n === 5) accumulator = 0;
-                render();
+                // En pantallas de 120 Hz la mitad de los cuadros no trae nada nuevo: no se vuelve a dibujar lo mismo
+                if (n > 0 || needsRender) { render(); needsRender = false; }
             } catch (error) {
                 if (animationErrors++ < 5) console.error("Error en la animación:", error);
             }
@@ -564,7 +701,17 @@
 
         resize();
         createHeart();
-        if (document.fonts) document.fonts.load(`italic 500 40px ${TEXT_FONT}`).catch(() => {});
+        if (document.fonts) document.fonts.load(`italic 500 40px ${TEXT_FONT}`).then(() => { fontEpoch++; warmUpText(); }).catch(() => {});
+        // La primera vez que se dibuja un emoji, la computadora tarda en cargar su letra y la animación da un brinquito:
+        // se dibujan una vez al inicio, en un lienzo escondido, para que el primer mensaje con 💛 salga suave
+        function warmUpText() {
+            const c = document.createElement('canvas'); c.width = c.height = 64;
+            const x = c.getContext('2d');
+            x.font = `italic 500 40px ${TEXT_FONT}`;
+            x.shadowBlur = 20; x.shadowColor = 'rgba(255, 210, 120, 0.5)';
+            x.fillText('“Aá ñ ü 💛✨🙏🌟❤️😊”', 0, 40);
+        }
+        warmUpText();
         animate();
         showControllerQR();
         showCursor();
@@ -575,7 +722,7 @@
         if (DEBUG) {
             window.muralDebug = {
                 enqueueMessage,
-                state: () => ({ frame, steps, particles: particles.length, sparks: sparkCount, stars: shootingStars.length, starQueue: starQueue.length, textQueue: textQueue.length, current: currentText && currentText.text, lights: lightsReceived })
+                state: () => ({ frame, steps, particles: particles.length, sparks: sparkCount, stars: shootingStars.length, starQueue: starQueue.length, textQueue: textQueue.length, crowd, shown: shownTexts.map(m => ({ text: m.text, small: m.small, lane: m.lane, seconds: +(m.duration * STEP_MS / 1000).toFixed(1) })), lights: lightsReceived })
             };
         }
     </script>

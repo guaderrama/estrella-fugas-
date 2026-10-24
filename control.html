@@ -36,6 +36,10 @@
         #mobileSaveInstruction p { margin: 0; color: #FBBF24; font-weight: 600; font-size: 1.125rem; animation: pulse 2s ease-in-out infinite; }
         @keyframes pulse { 50% { opacity: 0.5; } }
         #sentNote { color: #9CA3AF; font-size: 0.875rem; margin: 0 0 1rem; }
+        /* Aviso de dónde va la luz de la persona */
+        #lightStatus { display: inline-block; margin: 0 0 1rem; padding: 0.45rem 0.95rem; border-radius: 999px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35); color: #FCD34D; font-size: 0.875rem; transition: background-color 0.6s, box-shadow 0.6s; }
+        #lightStatus:empty { display: none; }
+        #lightStatus.arrived { background: rgba(251, 191, 36, 0.22); box-shadow: 0 0 18px rgba(251, 191, 36, 0.35); color: #FDE68A; }
     </style>
 </head>
 <body>
@@ -55,6 +59,7 @@
     <div class="container" id="downloadView">
         <h1>Thank you for your light!</h1>
         <p class="subtitle" id="souvenirText">Here is your personalized souvenir.</p>
+        <p id="lightStatus"></p>
         <p id="sentNote"></p>
         <img id="previewImage" src="" alt="Personalized souvenir">
 
@@ -74,7 +79,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, query, where, getCountFromServer, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { firebaseConfig, MESSAGES_COLLECTION, MAX_MESSAGE_CHARS } from "./firebase-config.js";
 
@@ -92,6 +97,8 @@
         const downloadLink = document.getElementById('downloadLink');
         const souvenirText = document.getElementById('souvenirText');
         const sentNote = document.getElementById('sentNote');
+        const lightStatus = document.getElementById('lightStatus');
+        const WATCH_MAX_MS = 20 * 60 * 1000; // Se deja de seguir la luz después de 20 minutos
 
         let messagesRef = null;
         let auth = null;
@@ -184,10 +191,50 @@
             previewImage.style.display = hasImage ? 'block' : 'none';
             downloadLink.style.display = hasImage && !isMobile ? 'flex' : 'none';
             document.getElementById('mobileSaveInstruction').style.display = hasImage && isMobile ? 'block' : 'none';
-            souvenirText.textContent = hasImage ? 'Here is your personalized souvenir.' : 'Your light is on its way.';
+            souvenirText.textContent = hasImage ? 'Here is your personalized souvenir.' : 'Your message was sent.';
             sentNote.textContent = delivered ? '' : 'Your connection is slow: your light will appear on the wall as soon as it reconnects.';
             messageView.style.display = 'none';
             downloadView.style.display = 'block';
+        }
+
+        function setLightStatus(text, arrived = false) {
+            lightStatus.textContent = text;
+            lightStatus.classList.toggle('arrived', arrived);
+        }
+
+        // Le dice a la persona cuántos mensajes van antes que el suyo, y le avisa cuando su luz ya salió en la pantalla
+        // (la pantalla borra cada mensaje de Firebase justo cuando lo muestra)
+        let stopWatching = () => {};
+        function watchMyLight(ref, sent) {
+            stopWatching();
+            let confirmed = false; let stopped = false;
+            let timer = null; let unsubscribe = () => {};
+            const stop = () => { stopped = true; unsubscribe(); clearTimeout(timer); };
+            stopWatching = stop;
+            const markArrived = () => { if (stopped) return; setLightStatus('✦ Your light is on the screen now!', true); stop(); };
+            setLightStatus('✦ Your light is on its way…');
+            unsubscribe = onSnapshot(ref, { includeMetadataChanges: true }, (snap) => {
+                if (!snap.exists()) {
+                    // Ya no está porque la pantalla lo mostró, pero solo se avisa si de verdad se guardó (si el envío falló, no se dice nada falso).
+                    // Con señal lenta puede desaparecer antes de verse confirmado: entonces se espera la confirmación del envío
+                    if (confirmed) markArrived(); else sent.then(markArrived, () => {});
+                    return;
+                }
+                if (confirmed || snap.metadata.hasPendingWrites || snap.metadata.fromCache) return;
+                const created = snap.get('createdAt');
+                if (!created) return;
+                confirmed = true;
+                getCountFromServer(query(messagesRef, where('createdAt', '<', created)))
+                    .then((result) => {
+                        if (stopped) return; // Ya llegó, o la persona ya mandó otro mensaje: este conteo ya no aplica
+                        const ahead = result.data().count;
+                        setLightStatus(ahead === 0
+                            ? '✦ Your light is on its way — watch the screen!'
+                            : `✦ Your light is on its way · ${ahead} ${ahead === 1 ? 'message' : 'messages'} ahead of yours`);
+                    })
+                    .catch((error) => console.warn('Could not count the messages ahead:', error));
+            }, (error) => { console.warn('Could not follow the light:', error); stop(); });
+            timer = setTimeout(stop, WATCH_MAX_MS);
         }
 
         messageInput.addEventListener('input', () => {
@@ -207,8 +254,10 @@
             setStatus('');
             try {
                 // Firestore guarda el mensaje aunque la señal sea mala; si no confirma rápido, se avisa en vez de esperar para siempre
-                const sent = addDoc(messagesRef, { text, createdAt: serverTimestamp(), t: Date.now() });
+                const ref = doc(messagesRef);
+                const sent = setDoc(ref, { text, createdAt: serverTimestamp(), t: Date.now() });
                 sent.catch((error) => console.error("Error sending message:", error));
+                watchMyLight(ref, sent);
                 const delivered = await Promise.race([sent.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), SEND_TIMEOUT_MS))]);
                 const hasImage = await generateSouvenirImage(text);
                 showSouvenirView(hasImage, delivered);
@@ -226,6 +275,8 @@
             counter.textContent = `0 / ${MAX_MESSAGE_CHARS}`;
             counter.classList.remove('limit');
             setStatus('');
+            stopWatching();
+            setLightStatus('');
             downloadView.style.display = 'none';
             messageView.style.display = 'block';
         });
