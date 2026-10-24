@@ -1,200 +1,503 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#111827">
-    <title>Leave Your Light</title>
-    <!-- Fuentes del diseño (también se usan para la imagen de recuerdo) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#06061a">
+    <meta name="color-scheme" content="dark">
+    <title>Mural de Luz · Deja tu luz</title>
+    <!-- La misma letra elegante de la pantalla grande (también se usa en la imagen de recuerdo) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,500&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --c: 242, 196, 109;                 /* Color de la luz escogida (cambia con los botones de color) */
+            --text: #f5f1e6; --muted: #b9b4cc; --faint: #8a85a3;
+            --line: rgba(255, 255, 255, 0.12); --glass: rgba(18, 16, 42, 0.62);
+            --gold: #f2c46d; --gold-ink: #2a1c00;
+            --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+            --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        }
         * { box-sizing: border-box; }
-        body { font-family: 'Poppins', sans-serif; background-color: #111827; color: #F3F4F6; display: flex; justify-content: center; align-items: center; min-height: 100vh; min-height: 100dvh; margin: 0; padding: 16px; -webkit-tap-highlight-color: transparent; }
-        .container { text-align: center; background-color: #1F2937; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 100%; max-width: 400px; }
-        h1 { font-size: 1.5rem; line-height: 2rem; font-weight: 700; margin: 0 0 0.5rem; }
-        .subtitle { color: #9CA3AF; margin: 0 0 1rem; }
-        textarea { font-family: inherit; font-size: 16px; background-color: #374151; border: 2px solid #4B5563; color: #F3F4F6; border-radius: 0.5rem; padding: 0.75rem; width: 100%; height: 100px; resize: none; transition: border-color 0.3s, box-shadow 0.3s; }
-        textarea:focus { outline: none; border-color: #FBBF24; box-shadow: 0 0 10px #FBBF24; }
-        .counter { text-align: right; font-size: 12px; color: #6B7280; margin-top: 4px; }
-        .counter.limit { color: #FBBF24; }
-        .btn { font-family: inherit; font-size: 1rem; color: white; font-weight: bold; padding: 0.75rem 1.5rem; border-radius: 0.5rem; border: none; cursor: pointer; width: 100%; margin-top: 1rem; transition: background-color 0.3s, transform 0.2s; display: flex; justify-content: center; align-items: center; gap: 0.5rem; text-decoration: none; }
-        .btn:disabled { opacity: 0.7; cursor: default; }
-        .btn-primary { background-color: #D97706; }
-        .btn-primary:hover { background-color: #B45309; }
-        .btn-secondary { background-color: #4B5563; }
-        .btn-secondary:hover { background-color: #6B7280; }
-        .btn-social { background-color: transparent; border: 2px solid #818cf8; color: #c7d2fe; }
-        .btn-social:hover { background-color: #4f46e5; border-color: #a5b4fc; }
+        html, body { height: 100%; }
+        body { margin: 0; font-family: var(--sans); color: var(--text); background: radial-gradient(ellipse 120% 80% at 50% 30%, #121036 0%, #07071d 55%, #020208 100%); background-color: #05050f; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
+        button { font-family: inherit; }
+
+        /* Cielo estrellado de fondo, igual que la pantalla grande */
+        #sky { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+        #sky i { position: absolute; border-radius: 50%; background: #fff; animation: twinkle var(--d) ease-in-out infinite; animation-delay: var(--delay); }
+        @keyframes twinkle { 50% { opacity: 0.15; } }
+
+        main { position: relative; z-index: 1; min-height: 100%; min-height: 100dvh; display: flex; justify-content: center; padding: max(20px, env(safe-area-inset-top)) 18px max(20px, env(safe-area-inset-bottom)); }
+        .view { width: 100%; max-width: 420px; display: none; flex-direction: column; align-items: center; text-align: center; }
+        .view.active { display: flex; animation: appear 0.5s ease both; }
+        @keyframes appear { from { opacity: 0; transform: translateY(10px); } }
+
+        h1 { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 42px; line-height: 1.05; margin: 18px 0 6px; color: #ffe9b8; text-shadow: 0 0 24px rgba(var(--c), 0.35); }
+        .sub { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0 0 18px; }
+        .label { color: var(--muted); font-size: 13px; margin: 20px 0 10px; letter-spacing: 0.02em; }
+
+        .card { width: 100%; background: var(--glass); border: 1px solid var(--line); border-radius: 18px; padding: 14px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+        textarea { width: 100%; height: 118px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font-family: var(--serif); font-style: italic; font-size: 22px; line-height: 1.35; padding: 2px 2px 0; }
+        textarea::placeholder { color: var(--faint); }
+        .card:focus-within { border-color: rgba(var(--c), 0.65); box-shadow: 0 0 0 3px rgba(var(--c), 0.12), 0 0 30px rgba(var(--c), 0.15); }
+        .counter { text-align: right; font-size: 12px; color: var(--faint); }
+        .counter.limit { color: var(--gold); }
+
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+        .chip { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: #d9d4ea; border-radius: 999px; padding: 7px 14px; font-size: 14px; cursor: pointer; }
+        .chip:active { transform: scale(0.96); }
+
+        .colors { display: flex; gap: 14px; justify-content: center; }
+        .color { width: 38px; height: 38px; border-radius: 50%; border: 0; cursor: pointer; background: radial-gradient(circle at 50% 45%, #fff 0 10%, rgb(var(--sw)) 38%, rgba(var(--sw), 0.55) 70%); box-shadow: 0 0 14px rgba(var(--sw), 0.45); transition: transform 0.2s; }
+        .color[aria-checked="true"] { transform: scale(1.12); outline: 2px solid #fff; outline-offset: 3px; }
+
+        .btn { width: 100%; border: 0; border-radius: 999px; padding: 15px 18px; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px; text-decoration: none; transition: transform 0.15s, filter 0.2s; }
         .btn:active { transform: scale(0.98); }
-        #statusMessage { margin: 1rem 0 0; color: #FBBF24; font-weight: 500; min-height: 20px; }
-        #statusMessage.error { color: #FCA5A5; }
-        #downloadView { display: none; }
-        #previewImage { max-width: 100%; border-radius: 0.5rem; border: 2px solid #4B5563; margin-bottom: 1rem; }
-        #mobileSaveInstruction { display: none; margin-top: 1rem; padding: 0.75rem; background: #1E293B; border: 2px dashed #475569; border-radius: 0.5rem; }
-        #mobileSaveInstruction p { margin: 0; color: #FBBF24; font-weight: 600; font-size: 1.125rem; animation: pulse 2s ease-in-out infinite; }
-        @keyframes pulse { 50% { opacity: 0.5; } }
-        #sentNote { color: #9CA3AF; font-size: 0.875rem; margin: 0 0 1rem; }
-        /* Aviso de dónde va la luz de la persona */
-        #lightStatus { display: inline-block; margin: 0 0 1rem; padding: 0.45rem 0.95rem; border-radius: 999px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35); color: #FCD34D; font-size: 0.875rem; transition: background-color 0.6s, box-shadow 0.6s; }
-        #lightStatus:empty { display: none; }
-        #lightStatus.arrived { background: rgba(251, 191, 36, 0.22); box-shadow: 0 0 18px rgba(251, 191, 36, 0.35); color: #FDE68A; }
+        .btn-gold { background: linear-gradient(180deg, #f7d58c, #e9b55a); color: var(--gold-ink); box-shadow: 0 6px 24px rgba(242, 196, 109, 0.28); }
+        .btn-ghost { background: rgba(255, 255, 255, 0.05); color: #e4def5; border: 1px solid var(--line); }
+        .btn-link { background: none; border: 0; color: var(--muted); font-size: 14px; padding: 10px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+        .spacer { flex: 1; min-height: 18px; }
+        #status { margin: 12px 0 0; min-height: 20px; font-size: 14px; color: var(--gold); }
+        #status.error { color: #fca5a5; }
+        .lang { margin-top: 14px; display: flex; gap: 4px; font-size: 13px; color: var(--faint); }
+        .lang button { background: none; border: 0; color: var(--faint); padding: 6px 8px; cursor: pointer; font-size: 13px; }
+        .lang button[aria-pressed="true"] { color: var(--text); font-weight: 600; }
+
+        /* ----- Lanzar la estrella ----- */
+        #launchView { min-height: calc(100dvh - 40px); }
+        .stage { position: relative; width: 240px; height: 240px; display: flex; align-items: center; justify-content: center; margin: 10px 0 4px; }
+        .ring { position: absolute; inset: 0; }
+        .ring circle { fill: none; stroke-width: 2; }
+        #star { width: 132px; height: 132px; border-radius: 50%; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; border: 0; padding: 0;
+                background: radial-gradient(circle, #fff 0 7%, rgba(255, 252, 240, 0.95) 12%, rgb(var(--c)) 24%, rgba(var(--c), 0.45) 44%, rgba(var(--c), 0.12) 60%, rgba(var(--c), 0) 71%);
+                animation: breathe 2.6s ease-in-out infinite; will-change: transform; }
+        @keyframes breathe { 50% { transform: scale(1.07); filter: brightness(1.12); } }
+        .charging #star { animation: heartbeat 0.85s ease-in-out infinite; }
+        @keyframes heartbeat { 0%, 100% { transform: translateY(var(--lift, 0)) scale(var(--grow, 1)); } 15% { transform: translateY(var(--lift, 0)) scale(calc(var(--grow, 1) * 1.12)); } 30% { transform: translateY(var(--lift, 0)) scale(var(--grow, 1)); } 45% { transform: translateY(var(--lift, 0)) scale(calc(var(--grow, 1) * 1.08)); } }
+        .flying #star { animation: none; transition: transform 0.75s cubic-bezier(0.3, 0.6, 0.2, 1), opacity 0.75s ease-in; transform: translateY(-115vh) scale(0.45); opacity: 0.3; }
+        .nudge #star { animation: nudge 0.6s ease; }
+        @keyframes nudge { 30% { transform: translateY(-26px); } 60% { transform: translateY(4px); } }
+        #preview { font-family: var(--serif); font-style: italic; font-size: 22px; line-height: 1.35; color: #fff4dc; max-width: 340px; margin: 6px 0 0; text-shadow: 0 0 18px rgba(var(--c), 0.4); overflow-wrap: anywhere; }
+        .hint { color: var(--muted); font-size: 15px; margin: 0; line-height: 1.5; }
+        .hint strong { color: var(--text); font-weight: 600; }
+        .chev { font-size: 22px; color: rgba(var(--c), 0.9); animation: float 1.6s ease-in-out infinite; line-height: 1; }
+        @keyframes float { 50% { transform: translateY(-6px); opacity: 0.55; } }
+
+        /* ----- Llegada y recuerdo ----- */
+        .pill { display: inline-block; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(var(--c), 0.4); background: rgba(var(--c), 0.1); color: #ffe7b0; font-size: 14px; margin: 0 0 16px; }
+        .pill.arrived { background: rgba(var(--c), 0.22); box-shadow: 0 0 24px rgba(var(--c), 0.35); }
+        #souvenir { width: auto; max-width: 74%; max-height: 46vh; border-radius: 14px; border: 1px solid var(--line); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45); margin-bottom: 14px; display: none; }
+        #saveHint { color: var(--gold); font-size: 14px; margin: 0 0 10px; display: none; }
+        #sentNote { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+        .row { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+        .insta { color: #c7d2fe; font-size: 14px; text-decoration: none; margin-top: 12px; display: inline-flex; align-items: center; gap: 6px; }
+
+        /* ----- Cuenta regresiva colectiva ----- */
+        #countdown { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; flex-direction: column; background: rgba(3, 3, 14, 0.82); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-align: center; }
+        #countdown.show { display: flex; }
+        #cdNum { font-family: var(--serif); font-style: italic; font-size: 140px; line-height: 1; color: #ffe9b8; text-shadow: 0 0 40px rgba(var(--c), 0.6); }
+        #cdNum.pop { animation: pop 0.9s ease both; }
+        @keyframes pop { from { transform: scale(1.5); opacity: 0; } 30% { opacity: 1; } to { transform: scale(1); } }
+        #cdText { color: var(--muted); font-size: 16px; margin-top: 10px; }
+
+        @media (prefers-reduced-motion: reduce) { #sky i, #star, .chev { animation: none !important; } }
+        .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     </style>
 </head>
 <body>
+    <div id="sky" aria-hidden="true"></div>
 
-    <div class="container" id="messageView">
-        <h1>Leave Your Light</h1>
-        <p class="subtitle">Write a message of love or faith.</p>
+    <main>
+        <!-- 1. Escribir y escoger color -->
+        <section class="view active" id="writeView" aria-labelledby="t-title">
+            <h1 id="t-title" data-i18n="title">Deja tu luz</h1>
+            <p class="sub" data-i18n="subtitle">Escribe un mensaje de amor o de fe.</p>
 
-        <textarea id="messageInput" placeholder="Your message..." maxlength="140"></textarea>
-        <div class="counter" id="counter">0 / 140</div>
+            <div class="card">
+                <label for="messageInput" class="sr-only" data-i18n="placeholder">Tu mensaje…</label>
+                <textarea id="messageInput" maxlength="140" data-i18n-placeholder="placeholder" placeholder="Tu mensaje…"></textarea>
+                <div class="counter" id="counter">0 / 140</div>
+            </div>
 
-        <button id="sendButton" class="btn btn-primary">Send My Light</button>
+            <p class="label" data-i18n="ideas">¿No sabes qué escribir?</p>
+            <div class="chips" id="chips"></div>
 
-        <p id="statusMessage"></p>
-    </div>
+            <p class="label" id="colorLabel" data-i18n="color">El color de tu luz</p>
+            <div class="colors" id="colors" role="radiogroup" aria-labelledby="colorLabel"></div>
 
-    <div class="container" id="downloadView">
-        <h1>Thank you for your light!</h1>
-        <p class="subtitle" id="souvenirText">Here is your personalized souvenir.</p>
-        <p id="lightStatus"></p>
-        <p id="sentNote"></p>
-        <img id="previewImage" src="" alt="Personalized souvenir">
+            <div class="spacer"></div>
+            <p id="status" role="status"></p>
+            <button class="btn btn-gold" id="continueButton" data-i18n="continue">Continuar</button>
+            <div class="lang" role="group" aria-label="Idioma / Language">
+                <button data-lang="es" aria-pressed="true">Español</button>·<button data-lang="en" aria-pressed="false">English</button>
+            </div>
+        </section>
 
-        <a id="downloadLink" href="#" download="souvenir-guaderrama-gallery.png" class="btn btn-primary">Download Image</a>
+        <!-- 2. Mantener y lanzar la estrella -->
+        <section class="view" id="launchView" aria-labelledby="t-ready">
+            <p class="sub" id="t-ready" style="margin-top:14px" data-i18n="ready">Tu luz está lista</p>
+            <p id="preview"></p>
+            <div class="spacer"></div>
+            <div class="chev" aria-hidden="true">︿</div>
+            <div class="stage" id="stage">
+                <svg class="ring" viewBox="0 0 240 240" aria-hidden="true">
+                    <circle cx="120" cy="120" r="104" stroke="rgba(255,255,255,0.08)"></circle>
+                    <circle id="charge" cx="120" cy="120" r="104" stroke="rgb(var(--c))" stroke-linecap="round" stroke-dasharray="653.5" stroke-dashoffset="653.5" transform="rotate(-90 120 120)"></circle>
+                </svg>
+                <button id="star" data-i18n-aria="launch" aria-label="Lanzar mi luz"></button>
+            </div>
+            <p class="hint"><strong data-i18n="hold">Mantén presionada la estrella</strong><br><span data-i18n="swipe">y desliza hacia arriba para lanzarla</span></p>
+            <div class="spacer"></div>
+            <p id="launchStatus" class="hint" role="status" style="min-height:22px;color:var(--gold)"></p>
+            <button class="btn btn-ghost" id="launchButton" data-i18n="launch">Lanzar mi luz</button>
+            <button class="btn-link" id="editButton" data-i18n="edit">Editar mensaje</button>
+        </section>
 
-        <div id="mobileSaveInstruction"><p>Tap and hold image to save</p></div>
+        <!-- 3. Llegada al muro y recuerdo -->
+        <section class="view" id="doneView" aria-labelledby="t-done">
+            <h1 id="t-done" data-i18n="onWay">Tu luz va en camino</h1>
+            <p class="sub" id="doneSub"></p>
+            <p class="pill" id="lightStatus" role="status"></p>
+            <p id="sentNote"></p>
+            <img id="souvenir" alt="">
+            <p id="saveHint" data-i18n="holdToSave">Mantén presionada la imagen para guardarla</p>
+            <div class="row">
+                <button class="btn btn-gold" id="shareButton" data-i18n="share">Compartir en historia</button>
+                <button class="btn btn-ghost" id="anotherButton" data-i18n="another">Mandar otra luz</button>
+            </div>
+            <a class="insta" href="https://www.instagram.com/ivanguaderramaart/" target="_blank" rel="noopener">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+                <span data-i18n="follow">Síguenos en Instagram</span>
+            </a>
+        </section>
+    </main>
 
-        <a id="instagramLink" href="https://www.instagram.com/ivanguaderramaart/" target="_blank" rel="noopener" class="btn btn-social">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
-            Follow us on Instagram
-        </a>
-
-        <button id="newButton" class="btn btn-secondary">Send another message</button>
-    </div>
-
-    <canvas id="imageCanvas" style="display: none;"></canvas>
+    <!-- Cuenta regresiva que se ve al mismo tiempo en la pantalla grande y en todos los celulares -->
+    <div id="countdown" role="alert" aria-live="assertive"><div id="cdNum"></div><div id="cdText"></div></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, query, where, getCountFromServer, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { firebaseConfig, MESSAGES_COLLECTION, MAX_MESSAGE_CHARS } from "./firebase-config.js";
+        import { firebaseConfig, MESSAGES_COLLECTION, HISTORY_COLLECTION, STATE_DOC, MAX_MESSAGE_CHARS, LIGHT_COLORS, DEFAULT_COLOR } from "./firebase-config.js";
 
+        // Pintura del artista que sirve de fondo para la imagen de recuerdo
         const SOUVENIR_BACKGROUND = 'https://firebasestorage.googleapis.com/v0/b/instalacionmariposas.firebasestorage.app/o/C5ABD578-447A-4160-BA4A-7EA2819A924C.png?alt=media&token=959ecc5c-8e0e-4845-82a9-b4b076b5628d';
-        const SEND_TIMEOUT_MS = 8000; // Si el servidor no confirma en este tiempo, se avisa en vez de quedarse "Sending..." para siempre
-
-        const messageView = document.getElementById('messageView');
-        const downloadView = document.getElementById('downloadView');
-        const messageInput = document.getElementById('messageInput');
-        const counter = document.getElementById('counter');
-        const sendButton = document.getElementById('sendButton');
-        const statusMessage = document.getElementById('statusMessage');
-        const newButton = document.getElementById('newButton');
-        const previewImage = document.getElementById('previewImage');
-        const downloadLink = document.getElementById('downloadLink');
-        const souvenirText = document.getElementById('souvenirText');
-        const sentNote = document.getElementById('sentNote');
-        const lightStatus = document.getElementById('lightStatus');
+        const SEND_TIMEOUT_MS = 8000;        // Si el servidor no confirma en este tiempo, se avisa en vez de quedarse esperando
         const WATCH_MAX_MS = 20 * 60 * 1000; // Se deja de seguir la luz después de 20 minutos
+        const FULL_CHARGE_MS = 1500;         // Lo que tarda la estrella en cargarse al máximo al mantenerla presionada
+        const SWIPE_PX = 70;                 // Cuánto hay que deslizar hacia arriba para lanzarla
+        const SERIF = '"Cormorant Garamond", Georgia, serif';
+        const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
 
-        let messagesRef = null;
-        let auth = null;
+        // ================= Textos en español e inglés =================
+        const TEXTS = {
+            es: {
+                title: 'Deja tu luz', subtitle: 'Escribe un mensaje de amor o de fe.', placeholder: 'Tu mensaje…',
+                ideas: '¿No sabes qué escribir?', color: 'El color de tu luz', continue: 'Continuar',
+                chips: ['Gracias', 'Te amo', 'Fe', 'Esperanza', 'Paz', 'Bendiciones'],
+                empty: 'Escribe tu mensaje primero.', connecting: 'Conectando… intenta en un momento.', offline: 'No hay internet. Intenta de nuevo.',
+                retry: (s) => `Sin conexión, reintentando en ${s} s…`,
+                ready: 'Tu luz está lista', hold: 'Mantén presionada la estrella', swipe: 'y desliza hacia arriba para lanzarla',
+                launch: 'Lanzar mi luz', edit: 'Editar mensaje', nudge: 'Desliza hacia arriba ↑', launching: 'Lanzando…',
+                error: 'No se pudo enviar. Intenta de nuevo.',
+                onWay: 'Tu luz va en camino', onWayPill: 'Viajando al muro…',
+                ahead: (n) => n === 0 ? 'Mira la pantalla: ya casi llega' : n === 1 ? 'Hay 1 luz antes que la tuya' : `Hay ${n} luces antes que la tuya`,
+                arrived: 'Tu luz ya está en el muro', arrivedPill: '✦ Búscala en la pantalla',
+                number: (n) => `Eres la luz número ${n} de esta noche`,
+                slow: 'Tu conexión está lenta: tu luz aparecerá en el muro en cuanto se conecte.',
+                share: 'Compartir en historia', download: 'Descargar imagen', preparing: 'Preparando tu recuerdo…', holdToSave: 'Mantén presionada la imagen para guardarla',
+                another: 'Mandar otra luz', follow: 'Síguenos en Instagram',
+                cdReady: 'Prepara tu luz…', cdGo: '¡Lanza tu luz!', cdGoText: 'Todos al mismo tiempo',
+                souvenirLight: (n) => `Luz nº ${n}`, souvenirAlt: 'Tu recuerdo del Mural de Luz', shareText: 'Dejé mi luz en el Mural de Luz ✦'
+            },
+            en: {
+                title: 'Leave your light', subtitle: 'Write a message of love or faith.', placeholder: 'Your message…',
+                ideas: 'Not sure what to write?', color: 'The color of your light', continue: 'Continue',
+                chips: ['Thank you', 'I love you', 'Faith', 'Hope', 'Peace', 'Blessings'],
+                empty: 'Write your message first.', connecting: 'Connecting… try again in a moment.', offline: 'No internet connection. Try again.',
+                retry: (s) => `No connection, retrying in ${s} s…`,
+                ready: 'Your light is ready', hold: 'Press and hold the star', swipe: 'then swipe up to launch it',
+                launch: 'Launch my light', edit: 'Edit message', nudge: 'Swipe up ↑', launching: 'Launching…',
+                error: "Couldn't send it. Try again.",
+                onWay: 'Your light is on its way', onWayPill: 'Traveling to the wall…',
+                ahead: (n) => n === 0 ? 'Watch the screen: it’s almost there' : n === 1 ? '1 light ahead of yours' : `${n} lights ahead of yours`,
+                arrived: 'Your light is on the wall', arrivedPill: '✦ Find it on the screen',
+                number: (n) => `You are light number ${n} tonight`,
+                slow: 'Your connection is slow: your light will appear on the wall as soon as it reconnects.',
+                share: 'Share to your story', download: 'Download image', preparing: 'Preparing your souvenir…', holdToSave: 'Press and hold the image to save it',
+                another: 'Send another light', follow: 'Follow us on Instagram',
+                cdReady: 'Get your light ready…', cdGo: 'Launch your light!', cdGoText: 'Everyone at once',
+                souvenirLight: (n) => `Light no. ${n}`, souvenirAlt: 'Your Mural de Luz souvenir', shareText: 'I left my light at the Mural de Luz ✦'
+            }
+        };
+        let lang = (() => {
+            try { const saved = localStorage.getItem('mural-lang'); if (saved === 'es' || saved === 'en') return saved; } catch {}
+            return (navigator.language || 'es').toLowerCase().startsWith('es') ? 'es' : 'en';
+        })();
+        const T = () => TEXTS[lang];
 
-        function setStatus(text, isError = false) {
-            statusMessage.textContent = text;
-            statusMessage.classList.toggle('error', isError);
+        // ================= Elementos =================
+        const $ = (id) => document.getElementById(id);
+        const views = { write: $('writeView'), launch: $('launchView'), done: $('doneView') };
+        const messageInput = $('messageInput'), counter = $('counter'), statusEl = $('status');
+        const star = $('star'), stage = $('stage'), charge = $('charge'), preview = $('preview'), launchStatus = $('launchStatus');
+        const lightStatus = $('lightStatus'), doneTitle = $('t-done'), doneSub = $('doneSub'), sentNote = $('sentNote');
+        const souvenirImg = $('souvenir'), saveHint = $('saveHint'), shareButton = $('shareButton');
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+        const canVibrate = typeof navigator.vibrate === 'function';
+        const vibrate = (pattern) => { if (canVibrate) try { navigator.vibrate(pattern); } catch {} };
+
+        let colorId = DEFAULT_COLOR;
+        let currentText = '';
+        let souvenirBlob = null;
+        let lightNumber = null;
+        let nightStart = null;       // Cuándo empezó la noche (lo decide la pantalla grande)
+
+        function showView(name) {
+            Object.entries(views).forEach(([key, el]) => el.classList.toggle('active', key === name));
+            window.scrollTo(0, 0);
+        }
+        function setStatus(text, isError = false) { statusEl.textContent = text; statusEl.classList.toggle('error', isError); }
+
+        // ================= Cielo de fondo (se dibuja una vez; el titilar lo hace el navegador, casi sin gastar batería) =================
+        (function buildSky() {
+            const sky = $('sky');
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < 90; i++) {
+                const s = document.createElement('i');
+                const size = Math.random() < 0.15 ? 2.2 : Math.random() * 1.4 + 0.6;
+                s.style.cssText = `left:${Math.random() * 100}%;top:${Math.random() * 100}%;width:${size}px;height:${size}px;opacity:${(0.25 + Math.random() * 0.6).toFixed(2)};--d:${(2.5 + Math.random() * 4).toFixed(1)}s;--delay:-${(Math.random() * 6).toFixed(1)}s`;
+                frag.appendChild(s);
+            }
+            sky.appendChild(frag);
+        })();
+
+        // ================= Idioma =================
+        function applyLanguage() {
+            document.documentElement.lang = lang;
+            document.querySelectorAll('[data-i18n]').forEach(el => { const v = T()[el.dataset.i18n]; if (typeof v === 'string') el.textContent = v; });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = T()[el.dataset.i18nPlaceholder]; });
+            document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', T()[el.dataset.i18nAria]); });
+            document.querySelectorAll('.lang button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+            souvenirImg.alt = T().souvenirAlt;
+            renderChips(); renderColors();
+            updateShareLabel();
+        }
+        document.querySelectorAll('.lang button').forEach(b => b.addEventListener('click', () => {
+            lang = b.dataset.lang;
+            try { localStorage.setItem('mural-lang', lang); } catch {}
+            applyLanguage();
+        }));
+
+        // ================= Ideas para escribir y color de la luz =================
+        function renderChips() {
+            const box = $('chips'); box.textContent = '';
+            T().chips.forEach(word => {
+                const b = document.createElement('button');
+                b.className = 'chip'; b.type = 'button'; b.textContent = word;
+                b.addEventListener('click', () => {
+                    const cur = messageInput.value.trim();
+                    const next = cur ? `${cur} ${word}` : word;
+                    if (next.length <= MAX_MESSAGE_CHARS) { messageInput.value = next; updateCounter(); }
+                    messageInput.focus();
+                });
+                box.appendChild(b);
+            });
+        }
+        function renderColors() {
+            const box = $('colors'); box.textContent = '';
+            Object.entries(LIGHT_COLORS).forEach(([id, c]) => {
+                const b = document.createElement('button');
+                b.className = 'color'; b.type = 'button';
+                b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(id === colorId)); b.setAttribute('aria-label', c.name[lang]);
+                b.style.setProperty('--sw', c.rgb.join(', '));
+                b.addEventListener('click', () => { setColor(id); vibrate(8); });
+                box.appendChild(b);
+            });
+        }
+        function setColor(id) {
+            colorId = LIGHT_COLORS[id] ? id : DEFAULT_COLOR;
+            document.documentElement.style.setProperty('--c', LIGHT_COLORS[colorId].rgb.join(', '));
+            document.querySelectorAll('.color').forEach((b, i) => b.setAttribute('aria-checked', String(Object.keys(LIGHT_COLORS)[i] === colorId)));
         }
 
-        // Se conecta con inicio de sesión anónimo; si no hay internet al abrir, sigue intentando solo
+        function updateCounter() {
+            const n = messageInput.value.length;
+            counter.textContent = `${n} / ${MAX_MESSAGE_CHARS}`;
+            counter.classList.toggle('limit', n >= MAX_MESSAGE_CHARS);
+            if (n) setStatus('');
+        }
+        messageInput.addEventListener('input', updateCounter);
+
+        // ================= Firebase =================
+        let db = null; let messagesRef = null; let historyRef = null; let auth = null;
         async function initializeFirebase(attempt = 1) {
             try {
-                if (!messagesRef) {
+                if (!db) {
                     const app = initializeApp(firebaseConfig);
-                    const db = getFirestore(app);
-                    auth = getAuth(app);
+                    db = getFirestore(app); auth = getAuth(app);
                     setLogLevel('error');
                     messagesRef = collection(db, MESSAGES_COLLECTION);
+                    historyRef = collection(db, HISTORY_COLLECTION);
+                    listenNight();
                 }
                 await signInAnonymously(auth);
-                if (statusMessage.classList.contains('error')) setStatus('');
+                if (statusEl.classList.contains('error')) setStatus('');
             } catch (error) {
-                console.error("Firebase initialization error:", error);
+                console.error('Firebase initialization error:', error);
                 const wait = Math.min(30, 2 ** attempt);
-                setStatus(`No connection, retrying in ${wait} s…`, true);
+                setStatus(T().retry(wait), true);
                 setTimeout(() => initializeFirebase(attempt + 1), wait * 1000);
             }
         }
 
-        // La imagen de fondo y las fuentes se cargan desde el principio, para que el recuerdo salga rápido y con la letra correcta
-        const backgroundImage = new Image();
-        backgroundImage.crossOrigin = 'anonymous';
-        const backgroundReady = new Promise((resolve) => {
-            backgroundImage.onload = () => resolve(true);
-            backgroundImage.onerror = () => resolve(false);
-        });
-        backgroundImage.src = SOUVENIR_BACKGROUND;
-        const fontsReady = Promise.all([
-            document.fonts.load("italic 500 60px 'Playfair Display'"),
-            document.fonts.load("400 30px 'Poppins'")
-        ]).catch(() => {});
-
-        async function generateSouvenirImage(text) {
-            await fontsReady;
-            const loaded = await backgroundReady;
-            if (!loaded) return false;
-            const canvas = document.getElementById('imageCanvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = backgroundImage.width;
-            canvas.height = backgroundImage.height;
-            ctx.drawImage(backgroundImage, 0, 0);
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'white';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.font = "italic 500 60px 'Playfair Display'";
-            wrapText(ctx, `"${text}"`, canvas.width / 2, canvas.height / 2, canvas.width * 0.8, 70);
-            ctx.font = "400 30px 'Poppins'";
-            ctx.fillText("Iván Guaderrama Gallery", canvas.width / 2, canvas.height - 80);
-            const dataUrl = canvas.toDataURL('image/png');
-            previewImage.src = dataUrl;
-            downloadLink.href = dataUrl;
-            return true;
-        }
-
-        function wrapText(context, text, x, y, maxWidth, lineHeight) {
-            const words = text.split(' ');
-            let line = '';
-            const lines = [];
-            for (let n = 0; n < words.length; n++) {
-                const testLine = line + words[n] + ' ';
-                if (context.measureText(testLine).width > maxWidth && n > 0) {
-                    lines.push(line);
-                    line = words[n] + ' ';
-                } else {
-                    line = testLine;
+        // La pantalla grande guarda cuándo empezó la noche y cuándo lanza la cuenta regresiva
+        let lastCountdown = null; let lastCountdownShown = -Infinity;
+        const isTimestamp = (v) => !!v && typeof v === 'object' && typeof v.toMillis === 'function';
+        function listenNight() {
+            onSnapshot(doc(db, ...STATE_DOC), { includeMetadataChanges: true }, (snap) => {
+                if (snap.metadata.fromCache) return; // Sin internet la copia guardada puede ser vieja: solo cuenta lo que confirma el servidor
+                const data = snap.data() || {};
+                if (isTimestamp(data.startedAt)) nightStart = data.startedAt;
+                const cd = isTimestamp(data.countdownAt) ? data.countdownAt.toMillis() : null;
+                // Solo una cuenta nueva y reciente (no una vieja que ya pasó antes de abrir la página), y no más de una por minuto
+                const isNew = cd && (lastCountdown === null || Math.abs(cd - lastCountdown) > 30 * 1000);
+                if (isNew && Math.abs(Date.now() - cd) < 15 * 1000 && performance.now() - lastCountdownShown > 60 * 1000) {
+                    lastCountdownShown = performance.now();
+                    startCountdown();
                 }
-            }
-            lines.push(line);
-            let startY = y - ((lines.length - 1) * lineHeight) / 2;
-            for (const l of lines) {
-                context.fillText(l.trim(), x, startY);
-                startY += lineHeight;
-            }
+                if (cd) lastCountdown = cd;
+            }, (error) => console.warn('Could not follow the night state:', error));
         }
 
-        function showSouvenirView(hasImage, delivered) {
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            previewImage.style.display = hasImage ? 'block' : 'none';
-            downloadLink.style.display = hasImage && !isMobile ? 'flex' : 'none';
-            document.getElementById('mobileSaveInstruction').style.display = hasImage && isMobile ? 'block' : 'none';
-            souvenirText.textContent = hasImage ? 'Here is your personalized souvenir.' : 'Your message was sent.';
-            sentNote.textContent = delivered ? '' : 'Your connection is slow: your light will appear on the wall as soon as it reconnects.';
-            messageView.style.display = 'none';
-            downloadView.style.display = 'block';
+        // ================= Paso 1 → 2 =================
+        $('continueButton').addEventListener('click', () => {
+            const text = messageInput.value.replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE_CHARS);
+            if (!text) { setStatus(T().empty); messageInput.focus(); return; }
+            currentText = text;
+            preview.textContent = `“${text}”`;
+            resetStar();
+            launchStatus.textContent = '';
+            showView('launch');
+        });
+        $('editButton').addEventListener('click', () => { if (!launched) showView('write'); });
+
+        // ================= Mantener y lanzar la estrella =================
+        let holdStart = 0; let startY = 0; let lastY = 0; let lastT = 0; let velocity = 0; let holding = false; let power = 0;
+        let chargeFrame = 0; let beatTimer = null; let launched = false; let activePointer = null;
+
+        function resetStar() {
+            launched = false; holding = false; power = 0; activePointer = null;
+            stage.classList.remove('charging', 'flying', 'nudge');
+            star.style.removeProperty('--lift'); star.style.removeProperty('--grow'); star.style.transform = '';
+            charge.style.strokeDashoffset = '653.5';
+            clearInterval(beatTimer); cancelAnimationFrame(chargeFrame);
+        }
+
+        function chargeLoop() {
+            if (!holding) return;
+            power = Math.min(1, (performance.now() - holdStart) / FULL_CHARGE_MS);
+            charge.style.strokeDashoffset = String(653.5 * (1 - power));
+            star.style.setProperty('--grow', (1 + power * 0.22).toFixed(3));
+            chargeFrame = requestAnimationFrame(chargeLoop);
+        }
+
+        star.addEventListener('pointerdown', (e) => {
+            if (launched || holding) return; // Un segundo dedo no hace nada
+            e.preventDefault();
+            activePointer = e.pointerId;
+            try { star.setPointerCapture(e.pointerId); } catch {}
+            holding = true; holdStart = performance.now();
+            startY = lastY = e.clientY; lastT = holdStart; velocity = 0;
+            stage.classList.add('charging'); stage.classList.remove('nudge');
+            // Late como un corazón (en Android también vibra)
+            vibrate([18, 90, 14]);
+            beatTimer = setInterval(() => vibrate([18, 90, 14]), 850);
+            chargeLoop();
+        });
+        star.addEventListener('pointermove', (e) => {
+            if (!holding || launched || e.pointerId !== activePointer) return;
+            const now = performance.now();
+            velocity = (e.clientY - lastY) / Math.max(1, now - lastT);
+            lastY = e.clientY; lastT = now;
+            const dy = Math.min(0, e.clientY - startY);
+            star.style.setProperty('--lift', `${(dy * 0.7).toFixed(1)}px`);
+            if (dy < -SWIPE_PX * 1.4) launchStar();
+        });
+        function stopCharging() {
+            holding = false; activePointer = null;
+            clearInterval(beatTimer); cancelAnimationFrame(chargeFrame);
+        }
+        function endHold(e) {
+            if (!holding || launched || e.pointerId !== activePointer) return;
+            stopCharging();
+            const dy = e.clientY - startY;
+            if (dy < -SWIPE_PX || velocity < -0.6) { launchStar(); return; }
+            // No se deslizó: la estrella regresa y se le recuerda cómo lanzarla
+            stage.classList.remove('charging');
+            star.style.removeProperty('--lift');
+            stage.classList.add('nudge');
+            launchStatus.textContent = T().nudge;
+        }
+        star.addEventListener('pointerup', endHold);
+        // Si el sistema interrumpe (notificaciones, llamada, cambiar de app), la estrella solo regresa: nunca se manda por accidente
+        star.addEventListener('pointercancel', (e) => {
+            if (!holding || launched || e.pointerId !== activePointer) return;
+            stopCharging();
+            stage.classList.remove('charging');
+            star.style.removeProperty('--lift');
+        });
+        document.addEventListener('visibilitychange', () => { if (document.hidden && holding) { stopCharging(); stage.classList.remove('charging'); star.style.removeProperty('--lift'); } });
+        star.addEventListener('contextmenu', (e) => e.preventDefault());
+        // Para quien prefiere un botón (o usa lector de pantalla)
+        $('launchButton').addEventListener('click', () => { if (!launched) { power = Math.max(power, 0.5); launchStar(); } });
+        star.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && !launched) { e.preventDefault(); power = Math.max(power, 0.5); launchStar(); } });
+
+        function launchStar() {
+            if (launched) return;
+            launched = true;
+            stopCharging();
+            vibrate(40);
+            stage.classList.remove('charging', 'nudge');
+            stage.classList.add('flying');
+            launchStatus.textContent = T().launching;
+            sendLight(currentText, colorId, Math.round(Math.max(0.3, power) * 100) / 100);
+        }
+
+        // ================= Enviar =================
+        async function sendLight(text, color, strength) {
+            if (!messagesRef) { launchFailed(T().connecting); return; }
+            if (navigator.onLine === false) { launchFailed(T().offline); return; }
+            try {
+                // Firestore guarda el mensaje aunque la señal sea mala; si no confirma rápido, se avisa en vez de esperar para siempre
+                const ref = doc(messagesRef);
+                const sent = setDoc(ref, { text, color, power: strength, createdAt: serverTimestamp(), t: Date.now() });
+                sent.catch((error) => console.error('Error sending message:', error));
+                watchMyLight(ref, sent);
+                const delivered = await Promise.race([sent.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), SEND_TIMEOUT_MS))]);
+                await new Promise(r => setTimeout(r, 500)); // Que se alcance a ver cómo se va la estrella
+                showDone(delivered);
+                makeSouvenir();
+            } catch (error) {
+                console.error('Error sending message:', error);
+                launchFailed(T().error);
+            }
+        }
+        function launchFailed(text) {
+            resetStar();
+            launchStatus.textContent = text;
+        }
+
+        function showDone(delivered) {
+            lightNumber = null; souvenirBlob = null; updateShareLabel();
+            doneTitle.textContent = T().onWay;
+            doneSub.textContent = '';
+            souvenirImg.style.display = 'none'; saveHint.style.display = 'none';
+            sentNote.textContent = delivered ? '' : T().slow;
+            showView('done');
         }
 
         function setLightStatus(text, arrived = false) {
@@ -202,85 +505,191 @@
             lightStatus.classList.toggle('arrived', arrived);
         }
 
-        // Le dice a la persona cuántos mensajes van antes que el suyo, y le avisa cuando su luz ya salió en la pantalla
-        // (la pantalla borra cada mensaje de Firebase justo cuando lo muestra)
+        // Le dice a la persona cuántas luces van antes que la suya, y le avisa cuando ya salió en la pantalla
+        // (la pantalla borra cada mensaje de la fila justo cuando lo muestra, y lo guarda en el respaldo)
         let stopWatching = () => {};
         function watchMyLight(ref, sent) {
             stopWatching();
-            let confirmed = false; let stopped = false;
+            let confirmed = false; let stopped = false; let created = null;
             let timer = null; let unsubscribe = () => {};
             const stop = () => { stopped = true; unsubscribe(); clearTimeout(timer); };
             stopWatching = stop;
-            const markArrived = () => { if (stopped) return; setLightStatus('✦ Your light is on the screen now!', true); stop(); };
-            setLightStatus('✦ Your light is on its way…');
+            const markArrived = () => {
+                if (stopped) return;
+                stop();
+                vibrate([30, 60, 30, 60, 60]);
+                doneTitle.textContent = T().arrived;
+                setLightStatus(T().arrivedPill, true);
+                findLightNumber(created);
+            };
+            setLightStatus(T().onWayPill);
             unsubscribe = onSnapshot(ref, { includeMetadataChanges: true }, (snap) => {
                 if (!snap.exists()) {
-                    // Ya no está porque la pantalla lo mostró, pero solo se avisa si de verdad se guardó (si el envío falló, no se dice nada falso).
+                    // Solo se avisa si de verdad se guardó (si el envío falló, no se dice nada falso).
                     // Con señal lenta puede desaparecer antes de verse confirmado: entonces se espera la confirmación del envío
                     if (confirmed) markArrived(); else sent.then(markArrived, () => {});
                     return;
                 }
                 if (confirmed || snap.metadata.hasPendingWrites || snap.metadata.fromCache) return;
-                const created = snap.get('createdAt');
+                created = snap.get('createdAt');
                 if (!created) return;
                 confirmed = true;
                 getCountFromServer(query(messagesRef, where('createdAt', '<', created)))
-                    .then((result) => {
-                        if (stopped) return; // Ya llegó, o la persona ya mandó otro mensaje: este conteo ya no aplica
-                        const ahead = result.data().count;
-                        setLightStatus(ahead === 0
-                            ? '✦ Your light is on its way — watch the screen!'
-                            : `✦ Your light is on its way · ${ahead} ${ahead === 1 ? 'message' : 'messages'} ahead of yours`);
-                    })
-                    .catch((error) => console.warn('Could not count the messages ahead:', error));
+                    .then((result) => { if (!stopped) setLightStatus(T().ahead(result.data().count)); })
+                    .catch((error) => console.warn('Could not count the lights ahead:', error));
             }, (error) => { console.warn('Could not follow the light:', error); stop(); });
             timer = setTimeout(stop, WATCH_MAX_MS);
         }
 
-        messageInput.addEventListener('input', () => {
-            const n = messageInput.value.length;
-            counter.textContent = `${n} / ${MAX_MESSAGE_CHARS}`;
-            counter.classList.toggle('limit', n >= MAX_MESSAGE_CHARS);
-        });
-
-        sendButton.addEventListener('click', async () => {
-            const text = messageInput.value.replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE_CHARS);
-            if (text === '') { setStatus('Please write a message.'); return; }
-            if (!messagesRef) { setStatus('Cannot send yet: connecting…', true); return; }
-            if (navigator.onLine === false) { setStatus('No internet connection. Please try again.', true); return; }
-
-            sendButton.disabled = true;
-            sendButton.textContent = 'Sending...';
-            setStatus('');
+        // "Eres la luz número N de esta noche": se cuentan las luces del respaldo desde que empezó la noche hasta la suya
+        async function findLightNumber(created) {
+            if (!created || !historyRef) return;
             try {
-                // Firestore guarda el mensaje aunque la señal sea mala; si no confirma rápido, se avisa en vez de esperar para siempre
-                const ref = doc(messagesRef);
-                const sent = setDoc(ref, { text, createdAt: serverTimestamp(), t: Date.now() });
-                sent.catch((error) => console.error("Error sending message:", error));
-                watchMyLight(ref, sent);
-                const delivered = await Promise.race([sent.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), SEND_TIMEOUT_MS))]);
-                const hasImage = await generateSouvenirImage(text);
-                showSouvenirView(hasImage, delivered);
-            } catch (error) {
-                console.error("Error sending message or generating image:", error);
-                setStatus('An error occurred. Please try again.', true);
-            } finally {
-                sendButton.disabled = false;
-                sendButton.textContent = 'Send My Light';
+                const filters = [where('createdAt', '<=', created)];
+                if (nightStart) filters.unshift(where('createdAt', '>=', nightStart));
+                const result = await getCountFromServer(query(historyRef, ...filters));
+                lightNumber = result.data().count;
+                if (lightNumber > 0) { doneSub.textContent = T().number(lightNumber); makeSouvenir(); }
+            } catch (error) { console.warn('Could not find the light number:', error); }
+        }
+
+        // ================= Recuerdo tamaño historia (1080 × 1920) =================
+        const backgroundImage = new Image();
+        backgroundImage.crossOrigin = 'anonymous';
+        const backgroundReady = new Promise((resolve) => { backgroundImage.onload = () => resolve(true); backgroundImage.onerror = () => resolve(false); });
+        backgroundImage.src = SOUVENIR_BACKGROUND;
+        const fontsReady = Promise.all([document.fonts.load(`italic 500 64px ${SERIF}`), document.fonts.load(`italic 600 64px ${SERIF}`)]).catch(() => {});
+
+        function wrapText(ctx, text, maxWidth) {
+            const lines = []; let line = '';
+            for (let word of text.split(' ')) {
+                let chars = Array.from(word);
+                while (chars.length > 1 && ctx.measureText(word).width > maxWidth) {
+                    let cut = chars.length - 1;
+                    while (cut > 1 && ctx.measureText(chars.slice(0, cut).join('')).width > maxWidth) cut--;
+                    if (line) { lines.push(line); line = ''; }
+                    lines.push(chars.slice(0, cut).join(''));
+                    chars = chars.slice(cut); word = chars.join('');
+                }
+                const test = line ? `${line} ${word}` : word;
+                if (line && ctx.measureText(test).width > maxWidth) { lines.push(line); line = word; } else line = test;
             }
+            if (line) lines.push(line);
+            return lines;
+        }
+
+        let souvenirJob = 0;
+        async function makeSouvenir() {
+            const job = ++souvenirJob;
+            const text = currentText; const rgb = LIGHT_COLORS[colorId].rgb; const number = lightNumber;
+            await fontsReady;
+            const hasBackground = await Promise.race([backgroundReady, new Promise(r => setTimeout(() => r(false), 4000))]);
+            if (job !== souvenirJob) return;
+            const W = 1080, H = 1920;
+            const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+            const c = canvas.getContext('2d');
+            // Fondo: la pintura del artista, cubriendo todo y oscurecida para que se lea el mensaje
+            c.fillStyle = '#06061a'; c.fillRect(0, 0, W, H);
+            if (hasBackground && backgroundImage.complete && backgroundImage.naturalWidth) {
+                const s = Math.max(W / backgroundImage.width, H / backgroundImage.height);
+                const bw = backgroundImage.width * s, bh = backgroundImage.height * s;
+                c.drawImage(backgroundImage, (W - bw) / 2, (H - bh) / 2, bw, bh);
+            }
+            const shade = c.createLinearGradient(0, 0, 0, H);
+            shade.addColorStop(0, 'rgba(4, 4, 18, 0.55)'); shade.addColorStop(0.5, 'rgba(4, 4, 18, 0.62)'); shade.addColorStop(1, 'rgba(4, 4, 18, 0.88)');
+            c.fillStyle = shade; c.fillRect(0, 0, W, H);
+            // Estrellitas
+            for (let i = 0; i < 160; i++) {
+                c.fillStyle = `rgba(255, 255, 255, ${(0.15 + Math.random() * 0.5).toFixed(2)})`;
+                c.beginPath(); c.arc(Math.random() * W, Math.random() * H, Math.random() * 1.8 + 0.4, 0, Math.PI * 2); c.fill();
+            }
+            // Corazón de luces, con la luz de la persona brillando en su color
+            const cx = W / 2, cy = 640, k = 21;
+            const hx = (t) => 16 * Math.pow(Math.sin(t), 3);
+            const hy = (t) => -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+            for (let i = 0; i < 420; i++) {
+                const t = Math.random() * Math.PI * 2, j = Math.random() * 16;
+                const a = Math.random() * Math.PI * 2;
+                const x = cx + hx(t) * k + Math.cos(a) * j, y = cy + hy(t) * k * 1.05 + Math.sin(a) * j;
+                c.fillStyle = `rgba(255, ${235 + Math.floor(Math.random() * 20)}, ${200 + Math.floor(Math.random() * 55)}, ${(0.35 + Math.random() * 0.55).toFixed(2)})`;
+                c.beginPath(); c.arc(x, y, Math.random() * 2.6 + 1, 0, Math.PI * 2); c.fill();
+            }
+            const st = 0.55;
+            const sx = cx + hx(st) * k, sy = cy + hy(st) * k * 1.05;
+            const glow = c.createRadialGradient(sx, sy, 0, sx, sy, 90);
+            glow.addColorStop(0, 'rgba(255, 255, 255, 1)'); glow.addColorStop(0.12, `rgba(${rgb.join(',')}, 1)`); glow.addColorStop(0.4, `rgba(${rgb.join(',')}, 0.35)`); glow.addColorStop(1, `rgba(${rgb.join(',')}, 0)`);
+            c.fillStyle = glow; c.beginPath(); c.arc(sx, sy, 90, 0, Math.PI * 2); c.fill();
+            // El mensaje
+            c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.font = `italic 500 66px ${SERIF}`;
+            const lines = wrapText(c, `“${text}”`, 880).slice(0, 6);
+            const lh = 82; const top = 1230 - ((lines.length - 1) * lh) / 2;
+            c.shadowColor = `rgba(${rgb.join(',')}, 0.7)`; c.shadowBlur = 28; c.fillStyle = '#fff6e0';
+            lines.forEach((l, i) => c.fillText(l, W / 2, top + i * lh));
+            c.shadowBlur = 0;
+            // Firma
+            c.fillStyle = 'rgba(255, 233, 184, 0.95)'; c.font = `italic 600 54px ${SERIF}`;
+            c.fillText('Mural de Luz', W / 2, H - 300);
+            c.fillStyle = 'rgba(245, 241, 230, 0.85)'; c.font = `400 32px ${SANS}`;
+            const date = new Date().toLocaleDateString(lang === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+            c.fillText(number ? `${T().souvenirLight(number)} · ${date}` : date, W / 2, H - 236);
+            c.fillStyle = 'rgba(245, 241, 230, 0.75)'; c.font = `400 30px ${SANS}`;
+            c.fillText('Iván Guaderrama Gallery · @ivanguaderramaart', W / 2, H - 180);
+
+            const url = canvas.toDataURL('image/png');
+            if (job !== souvenirJob) return;
+            souvenirImg.src = url; souvenirImg.style.display = 'block';
+            saveHint.style.display = isMobile && !canShareFiles() ? 'block' : 'none';
+            canvas.toBlob((blob) => { if (job === souvenirJob && blob) { souvenirBlob = blob; updateShareLabel(); } }, 'image/png');
+        }
+
+        function canShareFiles() {
+            try { return !!(navigator.canShare && navigator.canShare({ files: [new File([new Blob()], 'x.png', { type: 'image/png' })] })); } catch { return false; }
+        }
+        function updateShareLabel() {
+            shareButton.textContent = !souvenirBlob ? T().preparing : canShareFiles() ? T().share : T().download;
+            shareButton.style.opacity = souvenirBlob ? '1' : '0.6';
+        }
+
+        shareButton.addEventListener('click', async () => {
+            if (!souvenirBlob) return;
+            const file = new File([souvenirBlob], 'mi-luz-mural-de-luz.png', { type: 'image/png' });
+            if (canShareFiles()) {
+                // Abre el menú del celular para mandarlo directo a Instagram, WhatsApp, etc.
+                try { await navigator.share({ files: [file], title: 'Mural de Luz', text: T().shareText }); } catch (error) { if (error.name !== 'AbortError') console.warn('Share failed:', error); }
+                return;
+            }
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(souvenirBlob); a.download = file.name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 4000);
         });
 
-        newButton.addEventListener('click', () => {
-            messageInput.value = '';
-            counter.textContent = `0 / ${MAX_MESSAGE_CHARS}`;
-            counter.classList.remove('limit');
-            setStatus('');
-            stopWatching();
-            setLightStatus('');
-            downloadView.style.display = 'none';
-            messageView.style.display = 'block';
+        $('anotherButton').addEventListener('click', () => {
+            stopWatching(); souvenirJob++;
+            messageInput.value = ''; updateCounter(); setStatus('');
+            resetStar();
+            showView('write');
         });
 
+        // ================= Cuenta regresiva colectiva =================
+        let countdownTimers = [];
+        function startCountdown() {
+            countdownTimers.forEach(clearTimeout); countdownTimers = [];
+            const box = $('countdown'), num = $('cdNum'), txt = $('cdText');
+            const show = (n, t) => { num.textContent = n; txt.textContent = t; num.classList.remove('pop'); void num.offsetWidth; num.classList.add('pop'); };
+            box.classList.add('show');
+            show('3', T().cdReady); vibrate(30);
+            countdownTimers.push(setTimeout(() => { show('2', T().cdReady); vibrate(30); }, 1000));
+            countdownTimers.push(setTimeout(() => { show('1', T().cdReady); vibrate(30); }, 2000));
+            countdownTimers.push(setTimeout(() => { show('✦', `${T().cdGo} ${T().cdGoText}`); vibrate([60, 40, 60]); }, 3000));
+            countdownTimers.push(setTimeout(() => box.classList.remove('show'), 3900));
+        }
+        $('countdown').addEventListener('click', () => $('countdown').classList.remove('show'));
+
+        // ================= Inicio =================
+        applyLanguage();
+        setColor(colorId);
         initializeFirebase();
     </script>
 </body>

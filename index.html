@@ -9,7 +9,7 @@
     <!-- Tipografía de los mensajes -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&display=swap" rel="stylesheet">
     <style>
         :root { --glass: rgba(14, 12, 28, 0.4); --glass-border: rgba(255, 255, 255, 0.09); --text: rgba(255, 255, 255, 0.82); --muted: rgba(255, 255, 255, 0.46); }
         html, body { height: 100%; }
@@ -39,7 +39,7 @@
     </style>
 </head>
 <body>
-    <div id="status" class="glass" title="F: pantalla completa · H: ocultar · Q: ocultar QR">
+    <div id="status" class="glass" title="F: pantalla completa · H: ocultar · Q: ocultar QR · C: cuenta regresiva · P: póster de la noche · N dos veces: nueva noche">
         <i class="dot"></i><span id="netLabel">Conectando</span><span class="sep">·</span><span id="lightsLabel">0 luces</span><span class="sep" id="queueSep" hidden>·</span><span id="queueLabel" hidden></span>
     </div>
 
@@ -55,9 +55,9 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, onSnapshot, deleteDoc, setDoc, getDoc, getDocs, query, where, orderBy, limit, writeBatch, serverTimestamp, getCountFromServer, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { firebaseConfig, MESSAGES_COLLECTION, MAX_MESSAGE_CHARS } from "./firebase-config.js";
+        import { firebaseConfig, MESSAGES_COLLECTION, HISTORY_COLLECTION, STATE_DOC, MAX_MESSAGE_CHARS, LIGHT_COLORS, DEFAULT_COLOR, NIGHT_MAX_HOURS } from "./firebase-config.js";
 
         // --- Ajustes ---
         const HEART_PARTICLES = 1800;
@@ -72,6 +72,7 @@
         const BACKLOG_MAX_AGE_MS = 30 * 60 * 1000; // Al abrir la pantalla, salen los mensajes que nadie alcanzó a ver en la última media hora
         const STEP_MS = 1000 / 60;          // La animación avanza en pasos fijos: se ve igual en pantallas de 60 o 120 Hz
         const TEXT_FONT = '"Cormorant Garamond", Georgia, "Times New Roman", serif';
+        const SANS_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
         const DEBUG = new URLSearchParams(location.search).has('debug');
 
         // Si un mensaje llega vacío, se muestra uno de los versículos originales
@@ -137,6 +138,13 @@
         const PARTICLE_GLOWS = [makeGlow(255, 255, 255, 0.85, 0.35), makeGlow(200, 220, 255, 0.85, 0.35), makeGlow(255, 250, 200, 0.85, 0.35)];
         const GOLD_GLOW = makeGlow(255, 223, 120, 1, 0.5);
         const STAR_GLOW = makeGlow(255, 255, 225, 1, 0.55);
+        // Cada color de luz que se puede escoger en el celular tiene su brillo (la luz que se queda) y su estrella (más clara)
+        const COLOR_GLOWS = Object.fromEntries(Object.entries(LIGHT_COLORS).map(([id, { rgb: [r, g, b] }]) => [id, {
+            light: id === 'oro' ? GOLD_GLOW : makeGlow(r, g, b, 1, 0.5),
+            star: makeGlow(Math.round((r + 255 * 2) / 3), Math.round((g + 255 * 2) / 3), Math.round((b + 255 * 2) / 3), 1, 0.55),
+            // El brillo del texto: el oro conserva el tono original del mural
+            text: id === 'oro' ? { fill: '255, 223, 140', glow: '255, 210, 120' } : { fill: `${r}, ${g}, ${b}`, glow: `${r}, ${g}, ${b}` }
+        }]));
         // Chispas en colores vivos pero menos saturados que el original (rosa, cian, amarillo, rojo, verde)
         const SPARK_COLORS = ['hsl(320, 75%, 70%)', 'hsl(195, 75%, 64%)', 'hsl(55, 80%, 66%)', 'hsl(355, 72%, 64%)', 'hsl(150, 60%, 60%)'];
 
@@ -194,27 +202,33 @@
             ctx.drawImage(p.glow, p.x - size / 2, p.y - size / 2, size, size);
         }
 
-        // ================= Estrellas fugaces, pulsos, chispas y luces doradas =================
+        // ================= Estrellas fugaces, pulsos, chispas y luces de cada persona =================
         let shootingStars = [];
         let pulses = [];
         let sparkGroups = SPARK_COLORS.map(() => []);
         let sparkCount = 0;
         let joiners = [];
+        let lights = [];           // Las luces que la gente dejó en el corazón (para la constelación)
+        let links = [];            // Líneas finas entre luces vecinas: la constelación que crece durante la noche
+        let meteors = [];          // Estrellas fugaces de adorno (lluvia de estrellas y alguna suelta de vez en cuando)
+        let beatBoost = 0;         // Latido fuerte del corazón al celebrar
+        const MAX_LINKS = 2000;
 
         function launchStar(message) {
-            let x, y;
-            if (Math.random() > 0.5) { x = rand(0, W); y = Math.random() > 0.5 ? 0 : H; }
-            else { x = Math.random() > 0.5 ? 0 : W; y = rand(0, H); }
+            // La estrella entra desde abajo, como si viniera del celular de la persona
+            const x = rand(W * 0.12, W * 0.88); const y = H + 30;
             const tx = W / 2; const ty = H / 2;
             const d = len(tx - x, ty - y) || 1;
-            const speed = rand(5, 8) * Math.max(0.8, unit);
-            shootingStars.push({ x, y, tx, ty, vx: ((tx - x) / d) * speed, vy: ((ty - y) / d) * speed, size: rand(8, 12), trail: [], message });
+            const speed = rand(5, 7.5) * Math.max(0.8, unit);
+            const size = rand(8, 11) * (0.8 + message.power * 0.5); // Entre más la cargó, más grande llega
+            shootingStars.push({ x, y, tx, ty, vx: ((tx - x) / d) * speed, vy: ((ty - y) / d) * speed, size, trail: [], message, glow: COLOR_GLOWS[message.color].star });
         }
 
-        function explode(x, y) {
+        function explode(x, y, message) {
             pulses.push({ x, y, radius: 0, life: 1 });
             // Si ya hay muchas chispas, la siguiente explosión es más pequeña: nunca se traba
-            const count = Math.min(SPARKS_PER_MESSAGE, Math.max(150, MAX_SPARKS - sparkCount));
+            const wanted = SPARKS_PER_MESSAGE * (0.6 + message.power * 0.5);
+            const count = Math.round(Math.min(wanted, Math.max(150, MAX_SPARKS - sparkCount)));
             for (let i = 0; i < count; i++) {
                 const t = rand(0, Math.PI * 2);
                 const r = Math.sqrt(Math.random());
@@ -225,9 +239,61 @@
                 sparkGroups[group].push({ x, y, vx: hx * k, vy: hy * k, age: 0, life: 255 });
                 sparkCount++;
             }
-            // Una luz dorada que se va a quedar para siempre en el corazón
+            // Una luz del color de la persona que se va a quedar en el corazón
             const home = particles[Math.floor(Math.random() * Math.min(particles.length, HEART_PARTICLES))];
-            joiners.push({ x, y, vx: rand(-2, 2), vy: rand(-2, 2), t: home.t, ox: home.ox, oy: home.oy });
+            joiners.push({ x, y, vx: rand(-2, 2), vy: rand(-2, 2), t: home.t, ox: home.ox, oy: home.oy, glow: COLOR_GLOWS[message.color].light });
+        }
+
+        // Agrega una luz al corazón y la une con sus dos vecinas más cercanas
+        function addLight(t, ox, oy, glow, x, y) {
+            if (lights.length >= MAX_GOLDEN_LIGHTS) return;
+            const p = makeParticle(t, ox, oy, glow);
+            p.size = 4.4; // Un poco más grande que las luces blancas, para que se note el mosaico de colores de la gente
+            if (x !== undefined) { p.x = x; p.y = y; }
+            else { const home = homeOf(p); p.x = home.x; p.y = home.y; }
+            const home = homeOf(p);
+            const maxD2 = Math.pow(Math.min(W, H) * 0.22, 2);
+            let best = [null, null]; let bestD = [maxD2, maxD2];
+            for (const q of lights) {
+                const qh = homeOf(q);
+                const d2 = (qh.x - home.x) ** 2 + (qh.y - home.y) ** 2;
+                if (d2 < bestD[0]) { best = [q, best[0]]; bestD = [d2, bestD[0]]; }
+                else if (d2 < bestD[1]) { best[1] = q; bestD[1] = d2; }
+            }
+            for (const q of best) if (q && links.length < MAX_LINKS) links.push([p, q]);
+            lights.push(p);
+            particles.push(p);
+        }
+
+        function clearLights() {
+            const set = new Set(lights);
+            particles = particles.filter(p => !set.has(p));
+            lights = []; links = []; joiners = [];
+        }
+
+        // ================= Celebraciones =================
+        const MILESTONES = [25, 50, 100];
+        const isMilestone = (n) => MILESTONES.includes(n) || (n > 100 && n % 100 === 0);
+        let banner = null;         // Letrero que aparece unos segundos (metas, nueva noche…): { big, small, age, duration }
+
+        function showBanner(big, small, seconds = 4.5) {
+            banner = { big, small, age: 0, duration: Math.round(seconds * 1000 / STEP_MS) };
+        }
+
+        function spawnMeteor(delay = 0) {
+            // Cruzan el cielo en diagonal, de arriba hacia abajo
+            const fromLeft = Math.random() < 0.5;
+            const x = fromLeft ? rand(-0.1, 0.5) * W : rand(0.5, 1.1) * W;
+            const speed = rand(9, 14) * Math.max(0.8, unit);
+            const angle = rand(0.35, 0.6) * Math.PI / 2;
+            meteors.push({ x, y: rand(-0.15, 0.25) * H, vx: (fromLeft ? 1 : -1) * Math.cos(angle) * speed, vy: Math.sin(angle) * speed, size: rand(4, 7), trail: [], delay });
+        }
+
+        function celebrate(n) {
+            beatBoost = 1;
+            pulses.push({ x: W / 2, y: H / 2, radius: 0, life: 1 });
+            for (let i = 0; i < 18; i++) spawnMeteor(Math.floor(rand(0, 150)));
+            showBanner(`${n} luces esta noche`, `${n} lights tonight`);
         }
 
         function updateEffects() {
@@ -237,10 +303,11 @@
                 if (s.trail.length > 30) s.trail.shift();
                 s.x += s.vx; s.y += s.vy;
                 if (len(s.x - s.tx, s.y - s.ty) < 20) {
-                    explode(s.tx, s.ty);
+                    explode(s.tx, s.ty, s.message);
                     showMessage(s.message);
                     lightsReceived++;
-                    setText(lightsLabel, lightsReceived === 1 ? '1 luz' : `${lightsReceived} luces`);
+                    updateLightsLabel();
+                    if (isMilestone(lightsReceived)) celebrate(lightsReceived);
                     shootingStars.splice(i, 1);
                 }
             }
@@ -290,14 +357,32 @@
                 // Para que no tarde una eternidad en pantallas grandes, se apura un poco cuando está lejos
                 j.x += j.vx * Math.max(1, d / 300); j.y += j.vy * Math.max(1, d / 300);
                 if (d < 4) {
-                    if (particles.length < HEART_PARTICLES + MAX_GOLDEN_LIGHTS) {
-                        const p = makeParticle(j.t, j.ox, j.oy, GOLD_GLOW);
-                        p.x = j.x; p.y = j.y; p.size = 3.2;
-                        particles.push(p);
-                    }
+                    addLight(j.t, j.ox, j.oy, j.glow, j.x, j.y);
                     joiners.splice(i, 1);
                 }
             }
+            // Lluvia de estrellas (y de vez en cuando una suelta, para que el cielo se sienta vivo)
+            if (Math.random() < 1 / (60 * 25)) spawnMeteor();
+            for (let i = meteors.length - 1; i >= 0; i--) {
+                const m = meteors[i];
+                if (m.delay > 0) { m.delay--; continue; }
+                m.trail.push({ x: m.x, y: m.y });
+                if (m.trail.length > 22) m.trail.shift();
+                m.x += m.vx; m.y += m.vy;
+                if (m.y > H + 60 || m.x < -120 || m.x > W + 120) meteors.splice(i, 1);
+            }
+            if (beatBoost > 0) beatBoost = Math.max(0, beatBoost - 0.006);
+            if (banner && ++banner.age > banner.duration) banner = null;
+        }
+
+        function drawConstellation() {
+            if (links.length === 0) return;
+            // Todas las líneas en un solo trazo: muy barato aunque haya cientos
+            ctx.beginPath();
+            for (const [a, b] of links) { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
+            ctx.strokeStyle = `rgba(255, 236, 200, ${(0.17 + 0.05 * Math.sin(steps * 0.02)).toFixed(3)})`;
+            ctx.lineWidth = Math.max(0.9, unit * 0.8);
+            ctx.stroke();
         }
 
         function drawEffects() {
@@ -316,22 +401,24 @@
                 }
             });
             ctx.globalAlpha = 1;
-            // Estrellas fugaces con su cola
-            for (const s of shootingStars) {
+            // Estrellas fugaces con su cola (la de cada mensaje, en su color) y las de adorno
+            for (const s of [...shootingStars, ...meteors]) {
+                if (s.delay > 0) continue;
+                const glow = s.glow || STAR_GLOW;
                 s.trail.forEach((pt, i) => {
                     const f = i / s.trail.length;
                     ctx.globalAlpha = f * 0.6;
                     const size = s.size * f * 2;
-                    ctx.drawImage(STAR_GLOW, pt.x - size / 2, pt.y - size / 2, size, size);
+                    ctx.drawImage(glow, pt.x - size / 2, pt.y - size / 2, size, size);
                 });
                 ctx.globalAlpha = 1;
                 const size = s.size * 2.6;
-                ctx.drawImage(STAR_GLOW, s.x - size / 2, s.y - size / 2, size, size);
+                ctx.drawImage(glow, s.x - size / 2, s.y - size / 2, size, size);
             }
-            // Luces doradas viajando a su lugar
+            // Luces viajando a su lugar
             for (const j of joiners) {
                 const size = 6 * 2.6 * (1 + 0.15 * Math.sin(time / 200));
-                ctx.drawImage(GOLD_GLOW, j.x - size / 2, j.y - size / 2, size, size);
+                ctx.drawImage(j.glow, j.x - size / 2, j.y - size / 2, size, size);
             }
         }
 
@@ -347,17 +434,59 @@
         // Dónde sale cada mensaje cuando hay varios a la vez (arriba, abajo y al centro), en proporción al tamaño de la pantalla
         const LANES = [-0.2, 0.2, 0];
 
-        // Cualquiera puede escribir en Firestore: se limpia el texto para que nada raro rompa la pantalla
+        // Cualquiera puede escribir en Firestore: se revisa cada dato para que nada raro rompa la pantalla
+        const validColor = (c) => typeof c === 'string' && Object.hasOwn(LIGHT_COLORS, c) ? c : DEFAULT_COLOR;
+        const isTimestamp = (v) => !!v && typeof v === 'object' && typeof v.toMillis === 'function';
         const INVISIBLE_CHARS = new RegExp('[\\u0000-\\u001f\\u007f\\u200b-\\u200f\\u2028-\\u202e]', 'g');
         function cleanText(value) {
-            const text = String(value ?? '').slice(0, MAX_MESSAGE_CHARS * 4).replace(INVISIBLE_CHARS, ' ').replace(/\s+/g, ' ').trim();
+            const raw = typeof value === 'string' ? value : typeof value === 'number' ? String(value) : '';
+            const text = raw.slice(0, MAX_MESSAGE_CHARS * 4).replace(INVISIBLE_CHARS, ' ').replace(/\s+/g, ' ').trim();
             return Array.from(text).slice(0, MAX_MESSAGE_CHARS).join(''); // Por letras completas, para no dejar medio emoji al final
         }
 
-        function enqueueMessage(raw, ref = null) {
+        // Cada mensaje trae el color que la persona escogió y qué tanto cargó su estrella (power); todo se valida
+        function enqueueMessage(raw, ref = null, extra = {}) {
             if (starQueue.length >= MAX_QUEUE) return false;
-            starQueue.push({ text: cleanText(raw) || pick(FALLBACK_VERSES), ref });
+            const color = validColor(extra.color);
+            const power = typeof extra.power === 'number' && Number.isFinite(extra.power) ? clamp(extra.power, 0.3, 1) : 0.6;
+            const createdAt = isTimestamp(extra.createdAt) ? extra.createdAt : null;
+            starQueue.push({ text: cleanText(raw) || pick(FALLBACK_VERSES), ref, color, power, createdAt });
+            lastActivity = steps;
             return true;
+        }
+
+        // ================= Momentos especiales: cuenta regresiva y letreros =================
+        // Mientras están en pantalla, los mensajes nuevos esperan su turno (no se pierden)
+        let countdown = null;      // { age }
+        const COUNTDOWN_STEPS = Math.round(5.5 * 1000 / STEP_MS);
+        const overlayActive = () => !!(countdown || banner);
+        function startCountdown() { countdown = { age: 0 }; }
+        function updateCountdown() { if (countdown && ++countdown.age > COUNTDOWN_STEPS) { countdown = null; lastActivity = steps; } }
+
+        // ================= Modo recuerdo =================
+        // Si nadie escribe en un rato, vuelven a aparecer (suaves y más pequeños) mensajes que ya salieron esta noche
+        const memories = [];       // { text, color }
+        const echoes = [];         // Recuerdos en pantalla
+        const ECHO_AFTER_STEPS = Math.round(45 * 1000 / STEP_MS);
+        const ECHO_EVERY_STEPS = Math.round(9 * 1000 / STEP_MS);
+        let lastActivity = 0; let lastEcho = -Infinity; let lastEchoText = '';
+        function remember(message) {
+            if (!message.text) return;
+            memories.push({ text: message.text, color: message.color });
+            if (memories.length > 400) memories.shift();
+        }
+        function updateEchoes() {
+            const busy = waitingCount() > 0 || shownTexts.length > 0 || overlayActive();
+            // En cuanto llega alguien, el recuerdo se despide rápido
+            if (busy) for (const e of echoes) e.duration = Math.min(e.duration, e.age + 45);
+            else if (memories.length && echoes.length === 0 && steps - lastActivity > ECHO_AFTER_STEPS && steps - lastEcho > ECHO_EVERY_STEPS) {
+                let m = pick(memories);
+                if (memories.length > 1 && m.text === lastEchoText) m = pick(memories);
+                lastEchoText = m.text; lastEcho = steps;
+                const duration = Math.round(clamp(4 + m.text.length * 0.04, 5, 9) * 1000 / STEP_MS);
+                echoes.push({ text: m.text, color: m.color, age: 0, duration, typeSteps: 1, small: true, echo: true, lane: Math.floor(Math.random() * 3) });
+            }
+            for (let i = echoes.length - 1; i >= 0; i--) if (++echoes[i].age > echoes[i].duration) echoes.splice(i, 1);
         }
 
         // Mensajes que todavía no salen en pantalla (en fila o con su estrella en camino)
@@ -380,7 +509,7 @@
         }
 
         function releaseStars(now) {
-            if (starQueue.length === 0) return;
+            if (starQueue.length === 0 || overlayActive()) return;
             if (now - lastStarTime < (crowd ? CROWD_STAR_INTERVAL_MS : STAR_INTERVAL_MS)) return;
             // Solo sale una estrella si su mensaje va a tener lugar al llegar: así cada mensaje aparece en cuanto llega su luz
             if (shootingStars.length + textQueue.length >= roomSoon()) return;
@@ -398,6 +527,7 @@
         }
 
         function canStartText() {
+            if (overlayActive()) return false;
             if (!crowd) return shownTexts.length === 0;
             if (shownTexts.some(m => !m.small)) return false;
             return freeLane() !== -1;
@@ -412,9 +542,21 @@
             const duration = Math.round(seconds * 1000 / STEP_MS);
             // Se escribe letra por letra, pero nunca tarda más de un tercio del tiempo: el resto se lee completo
             const typeSteps = Math.max(1, Math.min((chars + 2) * 3, duration / 3));
-            shownTexts.push({ text: message.text, age: 0, duration, typeSteps, small, lane });
-            // Ya salió en pantalla: ahora sí se borra de Firebase (y el celular de la persona se entera de que su luz llegó)
-            if (message.ref) deleteDoc(message.ref).catch(() => {});
+            shownTexts.push({ text: message.text, color: message.color, age: 0, duration, typeSteps, small, lane });
+            if (message.ref && db) {
+                // Ya salió en pantalla: se guarda en el respaldo de la noche y se quita de la fila, las dos cosas juntas.
+                // El celular de la persona ve que se quitó de la fila y le avisa que su luz llegó
+                const batch = writeBatch(db);
+                batch.set(doc(db, HISTORY_COLLECTION, message.ref.id), { text: message.text, color: message.color, power: message.power, createdAt: message.createdAt || serverTimestamp(), shownAt: serverTimestamp() });
+                batch.delete(message.ref);
+                batch.commit().catch((error) => {
+                    // Si el respaldo falla, por lo menos se quita de la fila para que no se repita
+                    console.warn('No se pudo guardar en el respaldo:', error);
+                    deleteDoc(message.ref).catch(() => {});
+                });
+            }
+            remember(message);
+            lastActivity = steps;
         }
 
         function updateText() {
@@ -464,12 +606,13 @@
         }
 
         function drawText() {
+            for (const m of echoes) drawMessage(m);
             for (const m of shownTexts) drawMessage(m);
         }
 
         // Cada renglón se dibuja UNA sola vez en lienzos escondidos (el brillo dorado y la letra nítida) y en cada cuadro solo se copia:
         // dibujar letras con brillo 60 veces por segundo es de lo más pesado para la computadora, sobre todo con emojis
-        function renderLine(line, chars, fontSize, blur) {
+        function renderLine(line, chars, fontSize, blur, colors) {
             const font = `italic 500 ${fontSize}px ${TEXT_FONT}`;
             ctx.font = font;
             const width = Math.max(1, Math.ceil(ctx.measureText(line).width));
@@ -483,8 +626,8 @@
             glow.width = width + pad * 2; glow.height = h + pad * 2;
             const g = glow.getContext('2d');
             g.font = font; g.textBaseline = 'middle';
-            g.shadowBlur = blur; g.shadowColor = 'rgba(255, 210, 120, 0.9)';
-            g.fillStyle = 'rgb(255, 223, 140)';
+            g.shadowBlur = blur; g.shadowColor = `rgba(${colors.glow}, 0.9)`;
+            g.fillStyle = `rgb(${colors.fill})`;
             g.fillText(line, pad, pad + h / 2);
             // La letra nítida va a la resolución real de la pantalla
             const crisp = document.createElement('canvas');
@@ -498,12 +641,13 @@
         }
 
         function drawMessage(m) {
-            const fadeIn = clamp(m.age / 30, 0, 1);
-            const fadeOut = clamp((m.duration - m.age) / 60, 0, 1);
-            const alpha = Math.min(fadeIn, fadeOut);
+            // Los recuerdos aparecen y se van más despacio, y más tenues
+            const fadeIn = clamp(m.age / (m.echo ? 90 : 30), 0, 1);
+            const fadeOut = clamp((m.duration - m.age) / (m.echo ? 90 : 60), 0, 1);
+            const alpha = Math.min(fadeIn, fadeOut) * (m.echo ? 0.6 : 1);
             if (alpha <= 0) return;
-            // Grande para que se lea en un proyector; más pequeño cuando salen varios a la vez
-            const fontSize = m.small ? clamp(W / 52, 20, 46) : clamp(W / 34, 26, 72);
+            // Grande para que se lea en un proyector; más pequeño cuando salen varios a la vez o es un recuerdo
+            const fontSize = m.echo ? clamp(W / 60, 18, 40) : m.small ? clamp(W / 52, 20, 46) : clamp(W / 34, 26, 72);
             // Los renglones se preparan una sola vez (y otra vez solo si cambia el tamaño de la pantalla o termina de cargar la letra)
             const layoutKey = `${W}|${dpr}|${fontSize}|${fontEpoch}`;
             if (m.layoutKey !== layoutKey) {
@@ -512,7 +656,8 @@
                 const chars = lines.map(line => Array.from(line)); // Letras completas: al escribirse, un emoji nunca sale partido
                 // El brillo se mide en pixeles reales, como en el dibujo original
                 const blur = (m.small ? 20 : 30) / dpr;
-                m.layout = { lines: lines.map((line, i) => renderLine(line, chars[i], fontSize, blur)), total: chars.reduce((sum, c) => sum + c.length + 1, -1) };
+                const colors = (COLOR_GLOWS[m.color] || COLOR_GLOWS[DEFAULT_COLOR]).text;
+                m.layout = { lines: lines.map((line, i) => renderLine(line, chars[i], fontSize, blur, colors)), total: chars.reduce((sum, c) => sum + c.length + 1, -1) };
                 m.layoutKey = layoutKey;
             }
             const { lines, total } = m.layout;
@@ -557,6 +702,7 @@
                     setLogLevel('error');
                 }
                 await signInAnonymously(auth);
+                await setupNight();
                 listenMessages();
             } catch (error) {
                 // Si la computadora arranca antes que el internet, sigue intentando sola
@@ -567,12 +713,100 @@
             }
         }
 
+        // ================= La noche: cuándo empezó, su respaldo y la cuenta regresiva compartida =================
+        let nightStart = null;     // Timestamp de Firestore
+        let stateRef = null;
+        function updateLightsLabel() { setText(lightsLabel, lightsReceived === 1 ? '1 luz' : `${lightsReceived} luces`); }
+
+        let nightReady = false;
+        async function setupNight() {
+            if (nightReady) return;
+            stateRef = doc(db, ...STATE_DOC);
+            // Si no hay noche, o la última empezó hace muchas horas, empieza una nueva sola.
+            // Sin internet esto falla a propósito, para que se reintente en vez de arrancar sin noche
+            const snap = await getDoc(stateRef);
+            const started = snap.exists() ? snap.get('startedAt') : null;
+            const tooOld = !isTimestamp(started) || Date.now() - started.toMillis() > NIGHT_MAX_HOURS * 3600 * 1000;
+            if (tooOld) await setDoc(stateRef, { startedAt: serverTimestamp() }, { merge: true });
+            await listenNight();
+            await restoreNight();
+            nightReady = true;
+            // Si la pantalla se queda prendida días, la noche nueva empieza sola
+            setInterval(() => { if (nightStart && Date.now() - nightStart.toMillis() > NIGHT_MAX_HOURS * 3600 * 1000) startNewNight(); }, 10 * 60 * 1000);
+        }
+
+        let nightListening = false;
+        function listenNight() {
+            if (nightListening) return Promise.resolve();
+            nightListening = true;
+            return new Promise((resolve) => {
+                let first = true; let lastCountdown = null; let lastCountdownShown = -Infinity;
+                const done = setTimeout(resolve, 5000); // Sin conexión no se espera para siempre
+                onSnapshot(stateRef, { includeMetadataChanges: true }, (snap) => {
+                    if (snap.metadata.fromCache) return; // Solo cuenta lo que confirma el servidor (sin internet, la copia guardada puede ser vieja)
+                    const data = snap.data({ serverTimestamps: 'estimate' }) || {};
+                    const started = isTimestamp(data.startedAt) ? data.startedAt : null;
+                    // Otra pantalla (o la tecla N) empezó una nueva noche: el corazón se vacía para empezar de cero
+                    // (más de un minuto de diferencia: la hora estimada y la del servidor pueden variar unos segundos)
+                    if (started && nightStart && started.toMillis() - nightStart.toMillis() > 60 * 1000) {
+                        clearLights(); memories.length = 0; echoes.length = 0;
+                        lightsReceived = 0; updateLightsLabel();
+                        showBanner('Nueva noche', 'A new night begins', 3);
+                    }
+                    if (started) nightStart = started;
+                    // La cuenta regresiva sale al mismo tiempo en todas las pantallas y celulares
+                    const cd = isTimestamp(data.countdownAt) ? data.countdownAt.toMillis() : null;
+                    // Solo una cuenta reciente y nueva: la pantalla que la lanzó recibe primero la hora estimada y luego la del servidor
+                    // (es la misma), y se ignoran cuentas a menos de un minuto de la anterior para que nadie la pueda repetir sin parar
+                    const isNew = cd && (lastCountdown === null || Math.abs(cd - lastCountdown) > 30 * 1000);
+                    if (isNew && Math.abs(Date.now() - cd) < 15 * 1000 && !countdown && performance.now() - lastCountdownShown > 60 * 1000) {
+                        startCountdown(); lastCountdownShown = performance.now();
+                    }
+                    if (cd) lastCountdown = cd;
+                    if (first && started) { first = false; clearTimeout(done); resolve(); }
+                    else first = false;
+                }, (error) => { console.warn('No se pudo seguir la noche:', error); clearTimeout(done); resolve(); });
+            });
+        }
+
+        // Al abrir o recargar la pantalla, el corazón recupera todas las luces de esta noche (con sus colores y su constelación)
+        async function restoreNight() {
+            if (!nightStart) return;
+            try {
+                const history = collection(db, HISTORY_COLLECTION);
+                const [docs, total] = await Promise.all([
+                    getDocs(query(history, where('createdAt', '>=', nightStart), orderBy('createdAt', 'asc'), limit(MAX_GOLDEN_LIGHTS))),
+                    getCountFromServer(query(history, where('createdAt', '>=', nightStart)))
+                ]);
+                docs.forEach((d) => {
+                    try {
+                        const data = d.data() || {};
+                        const color = validColor(data.color);
+                        const home = particles[Math.floor(Math.random() * HEART_PARTICLES)];
+                        addLight(home.t, home.ox, home.oy, COLOR_GLOWS[color].light);
+                        remember({ text: cleanText(data.text), color });
+                    } catch (error) { console.warn('Luz del respaldo inválida:', error); }
+                });
+                lightsReceived = Math.max(lightsReceived, total.data().count);
+                updateLightsLabel();
+            } catch (error) { console.warn('No se pudo recuperar la noche:', error); }
+        }
+
+        function startNewNight() {
+            if (stateRef) setDoc(stateRef, { startedAt: serverTimestamp() }, { merge: true }).catch((error) => console.warn('No se pudo empezar la noche:', error));
+        }
+        function triggerCountdown() {
+            // Se guarda en Firebase para que salga en todas las pantallas y en los celulares; sin conexión, sale solo aquí
+            if (stateRef) setDoc(stateRef, { countdownAt: serverTimestamp() }, { merge: true }).catch(() => startCountdown());
+            else startCountdown();
+        }
+
         // Se usa la hora del servidor (la del celular puede estar mal); la del celular solo si falta la otra
         function createdMillis(data) {
-            if (data.createdAt && typeof data.createdAt.toMillis === 'function') return data.createdAt.toMillis();
-            if (typeof data.t === 'number') return data.t;
-            return 0;
+            if (isTimestamp(data.createdAt)) { const ms = data.createdAt.toMillis(); if (Number.isFinite(ms)) return ms; }
+            return phoneTime(data);
         }
+        const phoneTime = (data) => typeof data.t === 'number' && Number.isFinite(data.t) ? data.t : 0;
 
         function listenMessages() {
             const ref = collection(db, MESSAGES_COLLECTION);
@@ -586,13 +820,19 @@
                     .filter(change => change.type === 'added' && !seenIds.has(change.doc.id))
                     .map(change => ({ id: change.doc.id, ref: change.doc.ref, data: change.doc.data({ serverTimestamps: 'estimate' }) || {} }))
                     // En orden de llegada; si dos llegan en el mismo instante, desempata la hora del celular
-                    .sort((a, b) => (createdMillis(a.data) - createdMillis(b.data)) || ((Number(a.data.t) || 0) - (Number(b.data.t) || 0)))
+                    .sort((a, b) => (createdMillis(a.data) - createdMillis(b.data)) || (phoneTime(a.data) - phoneTime(b.data)))
                     .forEach(({ id, ref: docRef, data }) => {
                         seenIds.add(id);
-                        // Al abrir la pantalla, los mensajes muy viejos se limpian sin mostrarse
-                        if (isFirst && now - createdMillis(data) >= BACKLOG_MAX_AGE_MS) { deleteDoc(docRef).catch(() => {}); return; }
-                        // El mensaje se queda en Firebase hasta que sale en pantalla: si la pantalla se recarga, no se pierde
-                        enqueueMessage(data.text, docRef);
+                        try {
+                            // Al abrir la pantalla, los mensajes muy viejos se limpian sin mostrarse
+                            if (isFirst && now - createdMillis(data) >= BACKLOG_MAX_AGE_MS) { deleteDoc(docRef).catch(() => {}); return; }
+                            // El mensaje se queda en Firebase hasta que sale en pantalla: si la pantalla se recarga, no se pierde
+                            enqueueMessage(data.text, docRef, { color: data.color, power: data.power, createdAt: data.createdAt });
+                        } catch (error) {
+                            // Un mensaje dañado se descarta solo, sin afectar a los demás
+                            console.warn('Mensaje inválido descartado:', error);
+                            deleteDoc(docRef).catch(() => {});
+                        }
                     });
                 if (!snapshot.metadata.fromCache) gotServerSnapshot = true;
             }, (error) => {
@@ -637,6 +877,101 @@
             qr.title = url;
         }
 
+        // ================= Letreros, cuenta regresiva y póster =================
+        // Texto grande que se encoge solo si no cabe en la pantalla
+        function fitFont(text, size, weight = 500) {
+            ctx.font = `italic ${weight} ${size}px ${TEXT_FONT}`;
+            const width = ctx.measureText(text).width;
+            if (width > W * 0.9) { size = Math.floor(size * (W * 0.9) / width); ctx.font = `italic ${weight} ${size}px ${TEXT_FONT}`; }
+            return size;
+        }
+        function glowText(text, x, y, alpha) {
+            ctx.globalAlpha = alpha;
+            ctx.shadowColor = 'rgba(255, 210, 120, 0.8)'; ctx.shadowBlur = 36;
+            ctx.fillStyle = '#ffe9b8'; ctx.fillText(text, x, y);
+            ctx.shadowBlur = 0;
+        }
+
+        function drawBanner() {
+            if (!banner) return;
+            const b = banner;
+            const fade = clamp(Math.min(b.age / 30, (b.duration - b.age) / 45), 0, 1);
+            ctx.save();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = `rgba(3, 3, 14, ${0.35 * fade})`; ctx.fillRect(0, 0, W, H);
+            const size = fitFont(b.big, clamp(W / 16, 36, 120));
+            glowText(b.big, W / 2, H / 2 - size * 0.2, fade);
+            ctx.font = `italic 500 ${clamp(W / 48, 18, 40)}px ${TEXT_FONT}`;
+            ctx.fillStyle = 'rgba(245, 241, 230, 0.8)';
+            ctx.fillText(b.small, W / 2, H / 2 + size * 0.7);
+            ctx.restore();
+        }
+
+        function drawCountdown() {
+            if (!countdown) return;
+            const a = countdown.age; const sec = a * STEP_MS / 1000;
+            const veil = clamp(Math.min(a / 20, (COUNTDOWN_STEPS - a) / 30), 0, 1);
+            ctx.save();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = `rgba(3, 3, 14, ${0.5 * veil})`; ctx.fillRect(0, 0, W, H);
+            if (sec < 3) {
+                // 3, 2, 1: cada número entra grande y se asienta
+                const f = sec % 1;
+                const size = Math.round(Math.min(W, H) * 0.32 * (1 + (1 - Math.min(1, f * 3)) * 0.35));
+                ctx.font = `italic 500 ${size}px ${TEXT_FONT}`;
+                glowText(String(3 - Math.floor(sec)), W / 2, H / 2 - Math.min(W, H) * 0.04, Math.min(1, f * 5) * (f > 0.85 ? (1 - f) / 0.15 : 1));
+                ctx.globalAlpha = veil;
+                ctx.font = `italic 500 ${clamp(W / 44, 20, 46)}px ${TEXT_FONT}`;
+                ctx.fillStyle = 'rgba(245, 241, 230, 0.85)';
+                ctx.fillText('Preparen su luz · Get your light ready', W / 2, H / 2 + Math.min(W, H) * 0.25);
+            } else {
+                const f = (sec - 3) / 2.5;
+                const alpha = clamp(Math.min(f * 4, (1 - f) * 3), 0, 1);
+                const size = fitFont('¡Lancen sus luces!', clamp(W / 12, 44, 160));
+                glowText('¡Lancen sus luces!', W / 2, H / 2 - size * 0.25, alpha);
+                ctx.font = `italic 500 ${clamp(W / 40, 20, 50)}px ${TEXT_FONT}`;
+                ctx.fillStyle = 'rgba(245, 241, 230, 0.85)';
+                ctx.fillText('Send your lights!', W / 2, H / 2 + size * 0.65);
+            }
+            ctx.restore();
+        }
+
+        // Póster de la noche (formato Instagram 4:5): el corazón como está ahora, sin textos encima, y cuántas luces se encendieron
+        let posterMode = false;
+        function makePoster() {
+            posterMode = true;
+            try { render(); } finally { posterMode = false; needsRender = true; }
+            const S = Math.min(W, H) * 1.16; // Un poco de cielo alrededor para que el corazón quepa completo
+            const out = document.createElement('canvas'); out.width = 1080; out.height = 1350;
+            const c = out.getContext('2d');
+            c.fillStyle = '#05050f'; c.fillRect(0, 0, 1080, 1350);
+            c.drawImage(canvas, (W / 2 - S / 2) * dpr, (H / 2 - S / 2) * dpr, S * dpr, S * dpr, 0, 10, 1080, 1080);
+            const fadeBottom = c.createLinearGradient(0, 820, 0, 1350);
+            fadeBottom.addColorStop(0, 'rgba(5, 5, 15, 0)'); fadeBottom.addColorStop(0.35, 'rgba(5, 5, 15, 0.92)'); fadeBottom.addColorStop(1, '#05050f');
+            c.fillStyle = fadeBottom; c.fillRect(0, 820, 1080, 530);
+            c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.fillStyle = 'rgba(245, 241, 230, 0.88)'; c.font = `italic 500 46px ${TEXT_FONT}`;
+            c.fillText('Esta noche se encendieron', 540, 1030);
+            c.shadowColor = 'rgba(255, 210, 120, 0.7)'; c.shadowBlur = 30;
+            c.fillStyle = '#ffe9b8'; c.font = `italic 600 124px ${TEXT_FONT}`;
+            c.fillText(`${lightsReceived} ${lightsReceived === 1 ? 'luz' : 'luces'}`, 540, 1118);
+            c.shadowBlur = 0;
+            const date = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+            c.fillStyle = 'rgba(245, 241, 230, 0.7)'; c.font = `400 26px ${SANS_FONT}`;
+            c.fillText(`${lightsReceived} ${lightsReceived === 1 ? 'light was' : 'lights were'} lit tonight`, 540, 1212);
+            c.fillText(`Mural de Luz · Iván Guaderrama Gallery · ${date}`, 540, 1275);
+            out.toBlob((blob) => {
+                if (!blob) return;
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                const d = new Date(); // Fecha local (no la de Greenwich, que en la noche ya es el día siguiente)
+                a.download = `mural-de-luz-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.png`;
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+            }, 'image/png');
+            showBanner('Póster guardado', 'Poster saved', 2.5);
+        }
+
         // ================= Animación =================
         let lastTime = performance.now();
         let accumulator = 0;
@@ -647,11 +982,13 @@
         function step() {
             steps++;
             const time = steps * STEP_MS / 1000;
-            const beat = Math.sin(steps * 0.04) * 0.08 + 1.0; // El corazón respira como en el original
+            const beat = Math.sin(steps * 0.04) * (0.08 + beatBoost * 0.07) + 1.0; // El corazón respira como en el original (y late fuerte al celebrar)
             releaseStars(steps * STEP_MS);
             for (const p of particles) updateParticle(p, beat, time);
             updateEffects();
             updateText();
+            updateEchoes();
+            updateCountdown();
             for (const s of twinklers) s.phase += s.speed;
         }
 
@@ -665,9 +1002,13 @@
             }
             ctx.globalAlpha = 1;
             const scale = 2.6 * Math.max(0.8, unit);
+            drawConstellation();
             for (const p of particles) drawParticle(p, scale);
             drawEffects();
+            if (posterMode) return;
             drawText();
+            drawBanner();
+            drawCountdown();
         }
 
         function animate(now = performance.now()) {
@@ -687,12 +1028,20 @@
         }
 
         // ================= Eventos e inicio =================
+        let lastNewNightKey = 0; let lastCountdownKey = -Infinity;
         window.addEventListener('keydown', (e) => {
             if (e.metaKey || e.ctrlKey || e.altKey) return;
             const key = e.key.toLowerCase();
             if (key === 'f') { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else document.documentElement.requestFullscreen().catch(() => {}); }
             if (key === 'h') statusEl.classList.toggle('hidden');
             if (key === 'q') qrBox.classList.toggle('hidden');
+            if (key === 'c' && !countdown && performance.now() - lastCountdownKey > 60 * 1000) { lastCountdownKey = performance.now(); triggerCountdown(); }
+            if (key === 'p') makePoster();
+            if (key === 'n') {
+                // Se pide dos veces para no borrar la noche por accidente
+                if (performance.now() - lastNewNightKey < 3000) { lastNewNightKey = 0; startNewNight(); }
+                else { lastNewNightKey = performance.now(); showBanner('Presiona N otra vez para empezar una nueva noche', 'Press N again to start a new night', 3); }
+            }
         });
         let resizeTimer = null;
         window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 150); });
@@ -722,7 +1071,9 @@
         if (DEBUG) {
             window.muralDebug = {
                 enqueueMessage,
-                state: () => ({ frame, steps, particles: particles.length, sparks: sparkCount, stars: shootingStars.length, starQueue: starQueue.length, textQueue: textQueue.length, crowd, shown: shownTexts.map(m => ({ text: m.text, small: m.small, lane: m.lane, seconds: +(m.duration * STEP_MS / 1000).toFixed(1) })), lights: lightsReceived })
+                state: () => ({ frame, steps, particles: particles.length, sparks: sparkCount, stars: shootingStars.length, starQueue: starQueue.length, textQueue: textQueue.length, crowd, shown: shownTexts.map(m => ({ text: m.text, small: m.small, lane: m.lane, color: m.color, seconds: +(m.duration * STEP_MS / 1000).toFixed(1) })), lights: lightsReceived, heartLights: lights.length, links: links.length, memories: memories.length, echoes: echoes.map(e => e.text), countdown: !!countdown, banner: banner && banner.big, meteors: meteors.length, nightStart: nightStart && nightStart.toMillis() }),
+                celebrate, startCountdown, triggerCountdown, makePoster,
+                idle: () => { lastActivity = -1e9; lastEcho = -1e9; }
             };
         }
     </script>
