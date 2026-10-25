@@ -156,56 +156,94 @@
         let skyCanvas = null;
         let twinklers = [];
         function buildSky() {
-            // Las estrellas fijas se dibujan una sola vez; solo algunas titilan en vivo
+            // Todo el cielo se pinta una sola vez (al abrir o cambiar el tamaño); en cada cuadro solo se copia y titilan unas cuantas estrellas
             skyCanvas = document.createElement('canvas');
             skyCanvas.width = W; skyCanvas.height = H;
             const s = skyCanvas.getContext('2d');
-            for (let i = 0; i < 420; i++) {
-                s.fillStyle = `rgba(255, 255, 255, ${rand(0.08, 0.4)})`;
-                s.beginPath(); s.arc(rand(0, W), rand(0, H), rand(0.3, 1), 0, Math.PI * 2); s.fill();
+            const bottom = caboScene ? horizonY : H;
+            // Fondo: azul noche, casi negro arriba, que se vuelve apenas morado hacia el horizonte
+            const base = s.createLinearGradient(0, 0, 0, bottom);
+            base.addColorStop(0, '#03061a'); base.addColorStop(0.6, '#060a24'); base.addColorStop(1, '#120e2e');
+            s.fillStyle = base; s.fillRect(0, 0, W, H);
+            paintMilkyWay(s, bottom);
+            // Brillo leve violeta-rosa sobre el horizonte, como en las fotos de cielo del desierto
+            const glow = s.createLinearGradient(0, bottom - H * 0.3, 0, bottom);
+            glow.addColorStop(0, 'rgba(110, 60, 150, 0)'); glow.addColorStop(0.7, 'rgba(120, 62, 150, 0.12)'); glow.addColorStop(1, 'rgba(150, 70, 160, 0.26)');
+            s.fillStyle = glow; s.fillRect(0, bottom - H * 0.3, W, H * 0.3);
+            // Estrellas de todo el cielo
+            for (let i = 0; i < 900; i++) {
+                s.fillStyle = `rgba(${Math.round(rand(210, 255))}, ${Math.round(rand(220, 255))}, 255, ${rand(0.08, 0.45).toFixed(2)})`;
+                const r = Math.random() < 0.05 ? rand(1, 1.6) : rand(0.3, 0.9);
+                s.beginPath(); s.arc(rand(0, W), rand(0, bottom), r, 0, Math.PI * 2); s.fill();
             }
-            paintMilkyWay(s);
-            if (caboScene) {
-                const glow = s.createLinearGradient(0, horizonY - H * 0.32, 0, horizonY);
-                glow.addColorStop(0, 'rgba(70, 55, 140, 0)'); glow.addColorStop(1, 'rgba(78, 62, 150, 0.32)');
-                s.fillStyle = glow; s.fillRect(0, horizonY - H * 0.32, W, H * 0.32);
-            }
-            twinklers = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.random() * (caboScene ? horizonY / H : 1), r: rand(0.5, 1.2), phase: rand(0, Math.PI * 2), speed: rand(0.01, 0.03) }));
+            twinklers = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.random() * (bottom / H), r: rand(0.5, 1.2), phase: rand(0, Math.PI * 2), speed: rand(0.01, 0.03) }));
         }
 
-        // Vía Láctea: una franja diagonal de nubes de colores suaves (violeta, azul, rosa y turquesa), con su polvo oscuro
-        // y miles de estrellitas. Se pinta una sola vez (al abrir o cambiar el tamaño), así que no alenta la animación
-        function paintMilkyWay(s) {
-            const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
-            const ax = -0.1 * W, ay = H * 0.92, bx = 1.1 * W, by = H * 0.04;     // De abajo a la izquierda hacia arriba a la derecha
-            const bl = len(bx - ax, by - ay); const nx = -(by - ay) / bl, ny = (bx - ax) / bl;
-            const band = Math.min(W, H) * 0.13;
-            const at = (t, spread) => { const o = gauss() * band * spread; return [ax + (bx - ax) * t + nx * o, ay + (by - ay) * t + ny * o]; };
+        // Vía Láctea al estilo de una foto real: una nube azul pálida, curva y de ancho irregular, con racimos de estrellas
+        // y grietas de polvo oscuro. Es tenue a propósito, para que el corazón y los cometas sigan siendo lo que resalta
+        function paintMilkyWay(s, bottom) {
             const m = Math.min(W, H);
-            const colors = ['150, 110, 230', '90, 130, 235', '215, 120, 200', '90, 185, 215', '120, 100, 210', '235, 180, 160'];
-            // Nubes de color
-            for (let i = 0; i < 520; i++) {
-                const t = Math.random(); const [x, y] = at(t, 0.75);
-                const r = rand(0.03, 0.09) * m;
-                // El centro de la franja (a la mitad) es un poco más cálido y brillante, como el núcleo de la galaxia
-                const c = Math.abs(t - 0.55) < 0.12 && Math.random() < 0.35 ? colors[5] : pick(colors.slice(0, 5));
+            const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+            const ph = Array.from({ length: 5 }, () => rand(0, Math.PI * 2));
+            // Su eje: una curva suave que sube desde abajo a la izquierda hacia arriba a la derecha
+            const p0 = [W * rand(0.02, 0.1), bottom * 1.05], p1 = [W * rand(0.16, 0.26), bottom * 0.4], p2 = [W * rand(0.74, 0.86), -H * 0.05];
+            const along = (t) => {
+                const u = 1 - t;
+                const x = u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], y = u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1];
+                const dx = 2 * u * (p1[0] - p0[0]) + 2 * t * (p2[0] - p1[0]), dy = 2 * u * (p1[1] - p0[1]) + 2 * t * (p2[1] - p1[1]);
+                const d = len(dx, dy) || 1;
+                // Ancho que cambia a lo largo y un vaivén del centro: así no se ve como una línea
+                const width = m * 0.15 * (0.75 + 0.25 * Math.sin(t * 7 + ph[0]) + 0.15 * Math.sin(t * 13 + ph[1]));
+                const wander = m * 0.035 * Math.sin(t * 5 + ph[2]);
+                return { x: x - (dy / d) * wander, y: y + (dx / d) * wander, nx: -dy / d, ny: dx / d, width };
+            };
+            const blob = (x, y, r, rgb, a) => {
                 const g = s.createRadialGradient(x, y, 0, x, y, r);
-                g.addColorStop(0, `rgba(${c}, ${rand(0.035, 0.06).toFixed(3)})`); g.addColorStop(1, `rgba(${c}, 0)`);
+                g.addColorStop(0, `rgba(${rgb}, ${a.toFixed(3)})`); g.addColorStop(1, `rgba(${rgb}, 0)`);
                 s.fillStyle = g; s.fillRect(x - r, y - r, r * 2, r * 2);
+            };
+            // 0) Neblina muy tenue repartida por todo el cielo, para que no sea una sola franja
+            for (let i = 0; i < 26; i++) {
+                const x = rand(0, W), y = rand(0, bottom * 0.95);
+                blob(x, y, rand(0.15, 0.32) * m, pick(['90, 120, 210', '120, 100, 200', '80, 140, 200']), rand(0.012, 0.024));
             }
-            // Polvo oscuro a lo largo del centro, que le da textura
-            for (let i = 0; i < 140; i++) {
-                const [x, y] = at(Math.random(), 0.25);
-                const r = rand(0.015, 0.045) * m;
-                const g = s.createRadialGradient(x, y, 0, x, y, r);
-                g.addColorStop(0, 'rgba(6, 5, 22, 0.22)'); g.addColorStop(1, 'rgba(6, 5, 22, 0)');
-                s.fillStyle = g; s.fillRect(x - r, y - r, r * 2, r * 2);
+            // 1) Resplandor difuso azul pálido
+            for (let i = 0; i < 240; i++) {
+                const t = Math.random(); const a = along(t); const o = gauss() * a.width * 0.8;
+                blob(a.x + a.nx * o, a.y + a.ny * o, rand(0.05, 0.12) * m, '115, 145, 225', rand(0.014, 0.026));
             }
-            // Miles de estrellitas en la franja
-            for (let i = 0; i < 2600; i++) {
-                const [x, y] = at(Math.random(), 0.6);
-                s.fillStyle = `rgba(255, ${Math.round(rand(230, 255))}, ${Math.round(rand(220, 255))}, ${rand(0.12, 0.6).toFixed(2)})`;
-                const r = Math.random() < 0.06 ? rand(0.9, 1.5) : rand(0.3, 0.8);
+            // Un segundo brazo más tenue que se separa del principal, como en las fotos reales
+            for (let i = 0; i < 90; i++) {
+                const t = rand(0.12, 0.62); const a = along(t); const o = a.width * (0.7 + (t - 0.12) * 1.4) + gauss() * a.width * 0.35;
+                blob(a.x + a.nx * o, a.y + a.ny * o, rand(0.04, 0.09) * m, '115, 145, 225', rand(0.01, 0.018));
+            }
+            // 2) Racimos de estrellas: nubecitas claras y pequeñas, agrupadas, que le dan textura
+            for (let c = 0; c < 70; c++) {
+                const t = Math.random(); const a = along(t); const o = gauss() * a.width * 0.6;
+                const cx = a.x + a.nx * o, cy = a.y + a.ny * o;
+                for (let i = 0; i < 18; i++) blob(cx + gauss() * m * 0.04, cy + gauss() * m * 0.04, rand(0.006, 0.022) * m, '185, 205, 255', rand(0.02, 0.038));
+            }
+            // 3) Toques de color: algo de lavanda abajo y un poco de turquesa arriba
+            for (let i = 0; i < 50; i++) { const a = along(rand(0, 0.45)); const o = gauss() * a.width * 0.7; blob(a.x + a.nx * o, a.y + a.ny * o, rand(0.03, 0.07) * m, '150, 120, 215', rand(0.015, 0.025)); }
+            for (let i = 0; i < 30; i++) { const a = along(rand(0.5, 1)); const o = gauss() * a.width * 0.7; blob(a.x + a.nx * o, a.y + a.ny * o, rand(0.03, 0.06) * m, '110, 185, 225', rand(0.012, 0.02)); }
+            // 4) Polvo oscuro suave y en manchas sueltas (no en línea), que da la textura de la galaxia
+            for (let i = 0; i < 170; i++) {
+                const t = rand(0.08, 0.9);
+                if (Math.sin(t * 14 + ph[3]) > 0.25) continue;
+                const a = along(t); const o = a.width * 0.3 * Math.sin(t * 6 + ph[4]) + gauss() * a.width * 0.35;
+                blob(a.x + a.nx * o, a.y + a.ny * o, rand(0.015, 0.05) * m, '3, 5, 18', rand(0.1, 0.22));
+            }
+            for (let i = 0; i < 110; i++) {
+                const a = along(Math.random()); const o = gauss() * a.width * 0.8;
+                blob(a.x + a.nx * o, a.y + a.ny * o, rand(0.02, 0.06) * m, '3, 5, 18', rand(0.06, 0.13));
+            }
+            // 5) Muchas estrellitas, más juntas en la galaxia
+            for (let i = 0; i < 3400; i++) {
+                const a = along(Math.random()); const o = gauss() * a.width;
+                const x = a.x + a.nx * o, y = a.y + a.ny * o;
+                if (y > bottom) continue;
+                s.fillStyle = `rgba(${Math.round(rand(200, 240))}, ${Math.round(rand(215, 245))}, 255, ${rand(0.12, 0.6).toFixed(2)})`;
+                const r = Math.random() < 0.04 ? rand(0.9, 1.4) : rand(0.3, 0.75);
                 s.fillRect(x, y, r, r);
             }
         }
