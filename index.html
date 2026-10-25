@@ -39,7 +39,7 @@
     </style>
 </head>
 <body>
-    <div id="status" class="glass" title="F: pantalla completa · H: ocultar · Q: ocultar QR · C: cuenta regresiva · P: póster de la noche · N dos veces: nueva noche">
+    <div id="status" class="glass" title="F: pantalla completa · H: ocultar · Q: ocultar QR · C: cuenta regresiva · P: póster de la noche · M: mar de Los Cabos · N dos veces: nueva noche">
         <i class="dot"></i><span id="netLabel">Conectando</span><span class="sep">·</span><span id="lightsLabel">0 luces</span><span class="sep" id="queueSep" hidden>·</span><span id="queueLabel" hidden></span>
     </div>
 
@@ -103,6 +103,10 @@
         let H = window.innerHeight;
         let unit = 1;              // Escala general según el tamaño de la pantalla
         let heartScale = 1;
+        let CY = 0;                // Altura del centro del corazón (sube un poco cuando está el mar)
+        let horizonY = 0;          // Donde empieza el mar
+        let caboScene = true;      // El Arco, el mar y las ballenas (tecla M para quitarlos o ponerlos)
+        try { caboScene = localStorage.getItem('mural-cabo') !== 'off'; } catch {}
         let steps = 0;
         let lightsReceived = 0;
         let dpr = 1;               // Pixeles reales por pixel de la página (máximo 2)
@@ -118,7 +122,7 @@
         function homeOf(p) {
             return {
                 x: W / 2 + heartX(p.t) * heartScale + p.ox * unit,
-                y: H / 2 + heartY(p.t) * heartScale * 1.1 + p.oy * unit
+                y: CY + heartY(p.t) * heartScale * 1.1 + p.oy * unit
             };
         }
 
@@ -160,7 +164,12 @@
                 s.fillStyle = `rgba(255, 255, 255, ${rand(0.08, 0.4)})`;
                 s.beginPath(); s.arc(rand(0, W), rand(0, H), rand(0.3, 1), 0, Math.PI * 2); s.fill();
             }
-            twinklers = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.random(), r: rand(0.5, 1.2), phase: rand(0, Math.PI * 2), speed: rand(0.01, 0.03) }));
+            if (caboScene) {
+                const glow = s.createLinearGradient(0, horizonY - H * 0.32, 0, horizonY);
+                glow.addColorStop(0, 'rgba(70, 55, 140, 0)'); glow.addColorStop(1, 'rgba(78, 62, 150, 0.32)');
+                s.fillStyle = glow; s.fillRect(0, horizonY - H * 0.32, W, H * 0.32);
+            }
+            twinklers = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.random() * (caboScene ? horizonY / H : 1), r: rand(0.5, 1.2), phase: rand(0, Math.PI * 2), speed: rand(0.01, 0.03) }));
         }
 
         // ================= Partículas del corazón =================
@@ -180,7 +189,7 @@
         function updateParticle(p, beat, time) {
             const home = homeOf(p);
             const tx = W / 2 + (home.x - W / 2) * beat;
-            const ty = H / 2 + (home.y - H / 2) * beat;
+            const ty = CY + (home.y - CY) * beat;
             // Buscar su lugar, frenando al llegar
             let dx = tx - p.x; let dy = ty - p.y;
             const d = len(dx, dy) || 1;
@@ -219,7 +228,7 @@
             let x, y;
             if (Math.random() > 0.5) { x = rand(0, W); y = Math.random() > 0.5 ? -30 : H + 30; }
             else { x = Math.random() > 0.5 ? -30 : W + 30; y = rand(0, H); }
-            const tx = W / 2; const ty = H / 2;
+            const tx = W / 2; const ty = CY;
             const d = len(tx - x, ty - y) || 1;
             const speed = rand(5, 7.5) * Math.max(0.8, unit);
             const size = rand(8, 11) * (0.8 + message.power * 0.5); // Entre más la cargó, más grande llega
@@ -293,7 +302,7 @@
 
         function celebrate(n) {
             beatBoost = 1;
-            pulses.push({ x: W / 2, y: H / 2, radius: 0, life: 1 });
+            pulses.push({ x: W / 2, y: CY, radius: 0, life: 1 });
             for (let i = 0; i < 18; i++) spawnMeteor(Math.floor(rand(0, 150)));
             showBanner(`${n} luces esta noche`, `${n} lights tonight`);
         }
@@ -664,7 +673,7 @@
             }
             const { lines, total } = m.layout;
             const lineHeight = fontSize * 1.2;
-            const centerY = H / 2 + (m.small ? LANES[m.lane] * Math.min(W, H) : 0);
+            const centerY = CY + (m.small ? LANES[m.lane] * Math.min(W, H) : 0);
             const top = centerY - ((lines.length - 1) * lineHeight) / 2;
             const glowPulse = 0.75 + 0.25 * Math.sin(steps * 0.1);
             let remaining = Math.floor(clamp(m.age / m.typeSteps, 0, 1) * total);
@@ -844,6 +853,156 @@
             });
         }
 
+        // ================= Los Cabos: El Arco, el mar y una ballena con su ballenato =================
+        // Silueta de El Arco y Los Frailes calcada de una foto real (Land's End al atardecer, Wikimedia Commons).
+        // Son coordenadas de la foto: el nivel del mar está en y = 668. El hueco del arco está al final (abre al nivel del agua)
+        const ARCO = [[225,668],[240,640],[255,600],[265,560],[272,520],[280,495],[290,487],[300,490],[305,510],[318,520],[330,540],[342,570],[350,600],[360,630],[375,650],
+            [383,640],[385,600],[383,550],[385,500],[382,460],[388,420],[398,395],[420,385],[448,372],[468,370],[480,382],[500,400],[520,410],[540,430],[548,445],[560,460],[575,490],[590,520],[605,560],[620,600],[635,630],[650,668],
+            [728,668],[745,660],[762,650],[762,620],[765,580],[770,550],[785,530],[790,505],[800,490],[812,480],[825,478],[838,485],[845,500],[848,520],[860,525],[880,520],[900,505],[915,480],[930,460],[950,440],[970,410],[990,380],[1010,345],[1030,315],[1045,295],[1055,282],[1070,278],[1085,285],[1090,300],[1100,290],[1120,265],[1140,248],[1160,243],[1200,250],[1240,265],[1270,280],[1270,668],
+            [928,668],[926,640],[918,620],[905,605],[890,598],[872,598],[855,605],[842,620],[835,640],[833,668]];
+        const ARCO_X0 = 225, ARCO_W = 1045, ARCO_TOP = 243, ARCO_SEA = 668;
+        let arcoSprite = null; let arcoX = 0; let arcoY = 0;
+        let seaGradient = null; let arcoReflection = null; let seaH = 0;
+
+        // Todo lo que no se mueve (la silueta y el degradado del mar) se dibuja una sola vez al cambiar el tamaño
+        function buildCabo() {
+            seaH = H - horizonY;
+            // El Arco a la derecha, como se ve desde la bahía; su altura cabe sin tocar el corazón
+            const k = Math.min(H * 0.25 / (ARCO_SEA - ARCO_TOP), W * 0.42 / ARCO_W);
+            const w = Math.ceil(ARCO_W * k) + 4, h = Math.ceil((ARCO_SEA - ARCO_TOP) * k) + 6;
+            arcoSprite = document.createElement('canvas');
+            arcoSprite.width = Math.ceil(w * dpr); arcoSprite.height = Math.ceil(h * dpr);
+            const a = arcoSprite.getContext('2d');
+            a.scale(dpr, dpr);
+            a.beginPath();
+            ARCO.forEach(([x, y], i) => { const px = 2 + (x - ARCO_X0) * k, py = 2 + (y - ARCO_TOP) * k; i ? a.lineTo(px, py) : a.moveTo(px, py); });
+            a.closePath();
+            const rock = a.createLinearGradient(0, 0, 0, h);
+            rock.addColorStop(0, '#0d0c22'); rock.addColorStop(1, '#04040d');
+            a.fillStyle = rock; a.fill();
+            // Un borde apenas iluminado, como luz de luna, para que la silueta se lea de noche
+            a.lineJoin = 'round';
+            a.strokeStyle = 'rgba(150, 150, 210, 0.22)'; a.lineWidth = 1.2; a.stroke();
+            arcoX = W - w + 2; arcoY = horizonY - h + 4;
+            seaGradient = ctx.createLinearGradient(0, horizonY, 0, H);
+            seaGradient.addColorStop(0, '#0c0c2c'); seaGradient.addColorStop(1, '#020210');
+            // El reflejo de El Arco: la silueta de cabeza, desvaneciéndose hacia abajo (se prepara una sola vez)
+            arcoReflection = document.createElement('canvas');
+            arcoReflection.width = arcoSprite.width; arcoReflection.height = arcoSprite.height;
+            const r = arcoReflection.getContext('2d');
+            r.setTransform(1, 0, 0, -1, 0, arcoReflection.height);
+            r.drawImage(arcoSprite, 0, 0);
+            r.setTransform(1, 0, 0, 1, 0, 0);
+            r.globalCompositeOperation = 'destination-in';
+            const fade = r.createLinearGradient(0, 0, 0, Math.min(arcoReflection.height, seaH * dpr));
+            fade.addColorStop(0, 'rgba(0, 0, 0, 0.55)'); fade.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            r.fillStyle = fade; r.fillRect(0, 0, arcoReflection.width, arcoReflection.height);
+        }
+
+        // Ballena jorobada vista de lado (mirando a la derecha): cabeza plana con protuberancias, mandíbula con pliegues,
+        // la aleta pectoral larguísima (la seña de las jorobadas), una aleta dorsal pequeña sobre una joroba y la cola horizontal
+        const WHALE_BODY = new Path2D('M165,2 C163,-8 150,-16 128,-20 C100,-27 60,-35 15,-36 C-20,-36 -45,-32 -62,-30 C-68,-34 -72,-40 -76,-42 C-80,-36 -86,-30 -96,-26 C-118,-18 -142,-8 -170,-3 L-170,3 C-140,8 -110,20 -70,30 C-30,40 20,44 70,39 C105,35 140,26 158,15 C163,11 166,6 165,2 Z');
+        const WHALE_FIN = new Path2D('M84,22 C74,44 44,66 -10,76 C2,66 40,48 66,28 Z');
+        const WHALE_FLUKE = new Path2D('M0,0 C-10,-5 -30,-12 -62,-13 C-54,-8 -48,-4 -44,-1 C-50,3 -60,8 -70,14 C-40,12 -16,6 0,0 Z');
+        const WHALE_GROOVES = new Path2D('M165,4 C140,9 115,9 92,7 M104,32 C125,28 145,21 158,14 M100,36 C122,33 143,26 160,17 M96,40 C118,38 140,31 156,23');
+        const WHALE_KNOBS = [[150, -13], [139, -16], [128, -19], [117, -21]];
+
+        // La mamá nada de un lado a otro; al llegar a la orilla da la vuelta despacio, y su ballenato la sigue
+        const whale = { x: -0.1, dir: 1, flip: 1, phase: 0 };
+        function updateWhales() {
+            if (!caboScene) return;
+            whale.phase += 0.045;
+            whale.flip += clamp(whale.dir - whale.flip, -0.012, 0.012);
+            whale.x += 0.00042 * whale.flip;
+            if (whale.x > 1.12 && whale.dir > 0) whale.dir = -1;
+            if (whale.x < -0.12 && whale.dir < 0) whale.dir = 1;
+        }
+
+        function drawWhale(x, y, size, flip, phase, alpha) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(size * flip, size);
+            const px = 1 / size;
+            ctx.globalAlpha = alpha;
+            // Cola: sube y baja al nadar
+            ctx.save(); ctx.translate(-168, 0); ctx.rotate(Math.sin(phase) * 0.2);
+            ctx.fillStyle = 'rgba(120, 160, 215, 0.2)'; ctx.fill(WHALE_FLUKE);
+            ctx.strokeStyle = 'rgba(205, 228, 255, 0.5)'; ctx.lineWidth = 1.3 * px; ctx.stroke(WHALE_FLUKE);
+            ctx.restore();
+            // Cuerpo, con un halo suave (dos trazos: uno ancho y tenue, otro fino)
+            ctx.fillStyle = 'rgba(120, 160, 215, 0.2)'; ctx.fill(WHALE_BODY);
+            ctx.strokeStyle = 'rgba(170, 205, 255, 0.07)'; ctx.lineWidth = 7 * px; ctx.stroke(WHALE_BODY);
+            ctx.strokeStyle = 'rgba(205, 228, 255, 0.55)'; ctx.lineWidth = 1.4 * px; ctx.stroke(WHALE_BODY);
+            ctx.strokeStyle = 'rgba(205, 228, 255, 0.25)'; ctx.lineWidth = 1 * px; ctx.stroke(WHALE_GROOVES);
+            // Protuberancias de la cabeza y el ojo
+            ctx.fillStyle = 'rgba(225, 240, 255, 0.85)';
+            for (const [kx, ky] of WHALE_KNOBS) { ctx.beginPath(); ctx.arc(kx, ky, 1.6, 0, Math.PI * 2); ctx.fill(); }
+            ctx.beginPath(); ctx.arc(98, 4, 2.4, 0, Math.PI * 2); ctx.fill();
+            // Aleta pectoral blanca y muy larga, con un vaivén lento
+            ctx.save(); ctx.translate(84, 22); ctx.rotate(Math.sin(phase * 0.5 + 1) * 0.1); ctx.translate(-84, -22);
+            ctx.fillStyle = 'rgba(200, 225, 255, 0.32)'; ctx.fill(WHALE_FIN);
+            ctx.strokeStyle = 'rgba(225, 240, 255, 0.65)'; ctx.lineWidth = 1.2 * px; ctx.stroke(WHALE_FIN);
+            ctx.restore();
+            ctx.restore();
+        }
+
+        // El Arco va detrás del corazón
+        function drawArco() {
+            if (caboScene && arcoSprite && seaParts.arco) ctx.drawImage(arcoSprite, arcoX, arcoY, arcoSprite.width / dpr, arcoSprite.height / dpr);
+        }
+
+        // El mar: tapa lo que queda abajo del horizonte, refleja el cielo y el corazón con olas, y ahí nadan las ballenas
+        const seaParts = { refl: true, whales: true, waves: true, arco: true }; // Para medir cada parte con ?debug
+        function drawSea() {
+            if (!caboScene || !arcoReflection) return;
+            // 1) El agua (tapa lo que queda abajo del horizonte)
+            ctx.fillStyle = seaGradient; ctx.fillRect(0, horizonY, W, seaH);
+            if (seaParts.refl) {
+                // 2) El reflejo de El Arco en tiras que ondulan con las olas
+                const rw = arcoReflection.width / dpr, rh = Math.min(arcoReflection.height / dpr, seaH);
+                const slice = 6;
+                for (let y = 0; y < rh; y += slice) {
+                    const off = Math.sin(steps * 0.035 + y * 0.18) * (1 + y * 0.03);
+                    ctx.drawImage(arcoReflection, 0, y * dpr, arcoReflection.width, slice * dpr, arcoX + off, horizonY + y, rw, slice);
+                }
+                // 3) El reflejo del corazón: solo las luces cercanas al agua, de cabeza y temblando un poco
+                const reach = seaH * 0.95;
+                const rscale = 2.6 * Math.max(0.8, unit);
+                for (const p of particles) {
+                    const d = horizonY - p.y;
+                    if (d < 0 || d > reach) continue;
+                    ctx.globalAlpha = 0.32 * (1 - d / reach);
+                    const size = p.size * (1 + p.boost) * rscale;
+                    const wob = Math.sin(steps * 0.05 + p.phase + d * 0.08) * (1 + d * 0.04);
+                    ctx.drawImage(p.glow, p.x + wob - size / 2, horizonY + d * 0.9 - size / 2, size, size);
+                }
+                ctx.globalAlpha = 1;
+            }
+            // 4) La ballena y su ballenato, bajo la superficie
+            if (seaParts.whales) {
+            const size = seaH / 220;
+            const t = whale.phase;
+            const wx = whale.x * W, wy = horizonY + seaH * 0.5 + Math.sin(t * 0.13) * seaH * 0.05;
+            drawWhale(wx + whale.flip * 64 * size, wy - 36 * size + Math.sin(t * 0.17 + 1) * 4, size * 0.45, whale.flip, t * 1.35 + 1.2, 0.9);
+            drawWhale(wx, wy, size, whale.flip, t, 1);
+            }
+            // 5) Brillos de las olas por encima, para que se sienta que están bajo el agua
+            if (seaParts.waves) {
+            ctx.lineWidth = 1;
+            for (let k = 0; k < 4; k++) {
+                const y = horizonY + seaH * (0.14 + k * 0.24);
+                ctx.beginPath();
+                for (let x = 0; x <= W; x += 28) {
+                    const yy = y + Math.sin(x * 0.011 + steps * 0.03 + k * 1.7) * (2 + k);
+                    x ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy);
+                }
+                ctx.strokeStyle = `rgba(180, 190, 255, ${(0.07 - k * 0.008).toFixed(3)})`;
+                ctx.stroke();
+            }
+            }
+            ctx.fillStyle = 'rgba(190, 180, 255, 0.14)'; ctx.fillRect(0, horizonY, W, 1);
+        }
+
         // ================= Pantalla =================
         function resize() {
             W = window.innerWidth; H = window.innerHeight;
@@ -851,9 +1010,19 @@
             canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             unit = clamp(Math.min(W, H) / 800, 0.6, 2.2);
-            heartScale = Math.min(W, H) * 0.028;
+            horizonY = Math.round(H * 0.875);
+            if (caboScene) {
+                // Con el mar de Los Cabos el corazón cabe completo entre la orilla de arriba y el horizonte, y su punta casi toca el mar.
+                // El corazón mide 14.4 unidades hacia arriba y 14.5 hacia abajo (×1.1), más 25 de brillo alrededor de cada luz
+                heartScale = Math.min(Math.min(W, H) * 0.028, (horizonY - H * 0.03 - 50 * unit) / (2 * 15.95));
+                CY = H * 0.03 + 25 * unit + 15.9 * heartScale;
+            } else {
+                heartScale = Math.min(W, H) * 0.028;
+                CY = H / 2;
+            }
             // Las partículas (y las luces doradas acumuladas) se acomodan solas a su nuevo lugar; no se pierde nada
             buildSky();
+            if (caboScene) buildCabo();
             needsRender = true;
         }
 
@@ -902,10 +1071,10 @@
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillStyle = `rgba(3, 3, 14, ${0.35 * fade})`; ctx.fillRect(0, 0, W, H);
             const size = fitFont(b.big, clamp(W / 16, 36, 120));
-            glowText(b.big, W / 2, H / 2 - size * 0.2, fade);
+            glowText(b.big, W / 2, CY - size * 0.2, fade);
             ctx.font = `italic 500 ${clamp(W / 48, 18, 40)}px ${TEXT_FONT}`;
             ctx.fillStyle = 'rgba(245, 241, 230, 0.8)';
-            ctx.fillText(b.small, W / 2, H / 2 + size * 0.7);
+            ctx.fillText(b.small, W / 2, CY + size * 0.7);
             ctx.restore();
         }
 
@@ -921,19 +1090,19 @@
                 const f = sec % 1;
                 const size = Math.round(Math.min(W, H) * 0.32 * (1 + (1 - Math.min(1, f * 3)) * 0.35));
                 ctx.font = `italic 500 ${size}px ${TEXT_FONT}`;
-                glowText(String(3 - Math.floor(sec)), W / 2, H / 2 - Math.min(W, H) * 0.04, Math.min(1, f * 5) * (f > 0.85 ? (1 - f) / 0.15 : 1));
+                glowText(String(3 - Math.floor(sec)), W / 2, CY - Math.min(W, H) * 0.04, Math.min(1, f * 5) * (f > 0.85 ? (1 - f) / 0.15 : 1));
                 ctx.globalAlpha = veil;
                 ctx.font = `italic 500 ${clamp(W / 44, 20, 46)}px ${TEXT_FONT}`;
                 ctx.fillStyle = 'rgba(245, 241, 230, 0.85)';
-                ctx.fillText('Preparen su luz · Get your light ready', W / 2, H / 2 + Math.min(W, H) * 0.25);
+                ctx.fillText('Preparen su luz · Get your light ready', W / 2, CY + Math.min(W, H) * 0.25);
             } else {
                 const f = (sec - 3) / 2.5;
                 const alpha = clamp(Math.min(f * 4, (1 - f) * 3), 0, 1);
                 const size = fitFont('¡Lancen sus luces!', clamp(W / 12, 44, 160));
-                glowText('¡Lancen sus luces!', W / 2, H / 2 - size * 0.25, alpha);
+                glowText('¡Lancen sus luces!', W / 2, CY - size * 0.25, alpha);
                 ctx.font = `italic 500 ${clamp(W / 40, 20, 50)}px ${TEXT_FONT}`;
                 ctx.fillStyle = 'rgba(245, 241, 230, 0.85)';
-                ctx.fillText('Send your lights!', W / 2, H / 2 + size * 0.65);
+                ctx.fillText('Send your lights!', W / 2, CY + size * 0.65);
             }
             ctx.restore();
         }
@@ -947,7 +1116,7 @@
             const out = document.createElement('canvas'); out.width = 1080; out.height = 1350;
             const c = out.getContext('2d');
             c.fillStyle = '#05050f'; c.fillRect(0, 0, 1080, 1350);
-            c.drawImage(canvas, (W / 2 - S / 2) * dpr, (H / 2 - S / 2) * dpr, S * dpr, S * dpr, 0, 10, 1080, 1080);
+            c.drawImage(canvas, (W / 2 - S / 2) * dpr, (CY + (caboScene ? H * 0.06 : 0) - S / 2) * dpr, S * dpr, S * dpr, 0, 10, 1080, 1080);
             const fadeBottom = c.createLinearGradient(0, 820, 0, 1350);
             fadeBottom.addColorStop(0, 'rgba(5, 5, 15, 0)'); fadeBottom.addColorStop(0.35, 'rgba(5, 5, 15, 0.92)'); fadeBottom.addColorStop(1, '#05050f');
             c.fillStyle = fadeBottom; c.fillRect(0, 820, 1080, 530);
@@ -992,6 +1161,7 @@
             updateEchoes();
             updateCountdown();
             for (const s of twinklers) s.phase += s.speed;
+            updateWhales();
         }
 
         function render() {
@@ -1004,9 +1174,11 @@
             }
             ctx.globalAlpha = 1;
             const scale = 2.6 * Math.max(0.8, unit);
+            drawArco();
             drawConstellation();
             for (const p of particles) drawParticle(p, scale);
             drawEffects();
+            drawSea();
             if (posterMode) return;
             drawText();
             drawBanner();
@@ -1039,6 +1211,12 @@
             if (key === 'q') qrBox.classList.toggle('hidden');
             if (key === 'c' && !countdown && performance.now() - lastCountdownKey > 60 * 1000) { lastCountdownKey = performance.now(); triggerCountdown(); }
             if (key === 'p') makePoster();
+            if (key === 'm') {
+                // Quita o pone El Arco, el mar y las ballenas (se recuerda en esta computadora)
+                caboScene = !caboScene;
+                try { localStorage.setItem('mural-cabo', caboScene ? 'on' : 'off'); } catch {}
+                resize();
+            }
             if (key === 'n') {
                 // Se pide dos veces para no borrar la noche por accidente
                 if (performance.now() - lastNewNightKey < 3000) { lastNewNightKey = 0; startNewNight(); }
@@ -1074,7 +1252,23 @@
             window.muralDebug = {
                 enqueueMessage,
                 state: () => ({ frame, steps, particles: particles.length, sparks: sparkCount, stars: shootingStars.length, starQueue: starQueue.length, textQueue: textQueue.length, crowd, shown: shownTexts.map(m => ({ text: m.text, small: m.small, lane: m.lane, color: m.color, seconds: +(m.duration * STEP_MS / 1000).toFixed(1) })), lights: lightsReceived, heartLights: lights.length, links: links.length, memories: memories.length, echoes: echoes.map(e => e.text), countdown: !!countdown, banner: banner && banner.big, meteors: meteors.length, nightStart: nightStart && nightStart.toMillis() }),
-                celebrate, startCountdown, triggerCountdown, makePoster,
+                celebrate, startCountdown, triggerCountdown, makePoster, seaParts,
+                // Mide cuánto tarda en dibujarse un cuadro con y sin el mar (la lectura final obliga a terminar de dibujar)
+                bench: (n = 60) => {
+                    const time = (cabo) => {
+                        const was = caboScene; caboScene = cabo;
+                        ctx.getImageData(0, 0, 1, 1);
+                        const t0 = performance.now();
+                        for (let i = 0; i < n; i++) render();
+                        ctx.getImageData(0, 0, 1, 1);
+                        caboScene = was;
+                        return (performance.now() - t0) / n;
+                    };
+                    const out = { conMar: [], sinMar: [] };
+                    for (let r = 0; r < 3; r++) { out.conMar.push(time(true)); out.sinMar.push(time(false)); }
+                    const med = (a) => +a.sort((x, y) => x - y)[1].toFixed(2);
+                    return { msPorCuadroConMar: med(out.conMar), msPorCuadroSinMar: med(out.sinMar) };
+                },
                 idle: () => { lastActivity = -1e9; lastEcho = -1e9; }
             };
         }
