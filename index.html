@@ -164,12 +164,50 @@
                 s.fillStyle = `rgba(255, 255, 255, ${rand(0.08, 0.4)})`;
                 s.beginPath(); s.arc(rand(0, W), rand(0, H), rand(0.3, 1), 0, Math.PI * 2); s.fill();
             }
+            paintMilkyWay(s);
             if (caboScene) {
                 const glow = s.createLinearGradient(0, horizonY - H * 0.32, 0, horizonY);
                 glow.addColorStop(0, 'rgba(70, 55, 140, 0)'); glow.addColorStop(1, 'rgba(78, 62, 150, 0.32)');
                 s.fillStyle = glow; s.fillRect(0, horizonY - H * 0.32, W, H * 0.32);
             }
             twinklers = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.random() * (caboScene ? horizonY / H : 1), r: rand(0.5, 1.2), phase: rand(0, Math.PI * 2), speed: rand(0.01, 0.03) }));
+        }
+
+        // Vía Láctea: una franja diagonal de nubes de colores suaves (violeta, azul, rosa y turquesa), con su polvo oscuro
+        // y miles de estrellitas. Se pinta una sola vez (al abrir o cambiar el tamaño), así que no alenta la animación
+        function paintMilkyWay(s) {
+            const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+            const ax = -0.1 * W, ay = H * 0.92, bx = 1.1 * W, by = H * 0.04;     // De abajo a la izquierda hacia arriba a la derecha
+            const bl = len(bx - ax, by - ay); const nx = -(by - ay) / bl, ny = (bx - ax) / bl;
+            const band = Math.min(W, H) * 0.13;
+            const at = (t, spread) => { const o = gauss() * band * spread; return [ax + (bx - ax) * t + nx * o, ay + (by - ay) * t + ny * o]; };
+            const m = Math.min(W, H);
+            const colors = ['150, 110, 230', '90, 130, 235', '215, 120, 200', '90, 185, 215', '120, 100, 210', '235, 180, 160'];
+            // Nubes de color
+            for (let i = 0; i < 520; i++) {
+                const t = Math.random(); const [x, y] = at(t, 0.75);
+                const r = rand(0.03, 0.09) * m;
+                // El centro de la franja (a la mitad) es un poco más cálido y brillante, como el núcleo de la galaxia
+                const c = Math.abs(t - 0.55) < 0.12 && Math.random() < 0.35 ? colors[5] : pick(colors.slice(0, 5));
+                const g = s.createRadialGradient(x, y, 0, x, y, r);
+                g.addColorStop(0, `rgba(${c}, ${rand(0.035, 0.06).toFixed(3)})`); g.addColorStop(1, `rgba(${c}, 0)`);
+                s.fillStyle = g; s.fillRect(x - r, y - r, r * 2, r * 2);
+            }
+            // Polvo oscuro a lo largo del centro, que le da textura
+            for (let i = 0; i < 140; i++) {
+                const [x, y] = at(Math.random(), 0.25);
+                const r = rand(0.015, 0.045) * m;
+                const g = s.createRadialGradient(x, y, 0, x, y, r);
+                g.addColorStop(0, 'rgba(6, 5, 22, 0.22)'); g.addColorStop(1, 'rgba(6, 5, 22, 0)');
+                s.fillStyle = g; s.fillRect(x - r, y - r, r * 2, r * 2);
+            }
+            // Miles de estrellitas en la franja
+            for (let i = 0; i < 2600; i++) {
+                const [x, y] = at(Math.random(), 0.6);
+                s.fillStyle = `rgba(255, ${Math.round(rand(230, 255))}, ${Math.round(rand(220, 255))}, ${rand(0.12, 0.6).toFixed(2)})`;
+                const r = Math.random() < 0.06 ? rand(0.9, 1.5) : rand(0.3, 0.8);
+                s.fillRect(x, y, r, r);
+            }
         }
 
         // ================= Partículas del corazón =================
@@ -222,6 +260,9 @@
         let meteors = [];          // Estrellas fugaces de adorno (lluvia de estrellas y alguna suelta de vez en cuando)
         let beatBoost = 0;         // Latido fuerte del corazón al celebrar
         const MAX_LINKS = 2000;
+        const FLIGHT_SECONDS = 4;           // Lo que tarda el cometa en llegar al corazón: despacio, para que hasta el distraído lo alcance a ver
+        const CROWD_FLIGHT_SECONDS = 2.6;   // Un poco más rápido cuando hay mucha gente, para que la fila siga avanzando
+        const flightSteps = () => Math.round((crowd ? CROWD_FLIGHT_SECONDS : FLIGHT_SECONDS) * 1000 / STEP_MS);
 
         function launchStar(message) {
             // La estrella entra desde cualquier orilla de la pantalla (arriba, abajo o los lados), como en el original
@@ -229,10 +270,12 @@
             if (Math.random() > 0.5) { x = rand(0, W); y = Math.random() > 0.5 ? -30 : H + 30; }
             else { x = Math.random() > 0.5 ? -30 : W + 30; y = rand(0, H); }
             const tx = W / 2; const ty = CY;
-            const d = len(tx - x, ty - y) || 1;
-            const speed = rand(5, 7.5) * Math.max(0.8, unit);
+            // Viaja en una curva suave, como un cometa, y va frenando al acercarse al corazón
+            const dx = tx - x, dy = ty - y; const d = len(dx, dy) || 1;
+            const bend = rand(0.12, 0.22) * (Math.random() < 0.5 ? -1 : 1);
+            const cx = (x + tx) / 2 - dy * bend, cy = (y + ty) / 2 + dx * bend;
             const size = rand(8, 11) * (0.8 + message.power * 0.5); // Entre más la cargó, más grande llega
-            shootingStars.push({ x, y, tx, ty, vx: ((tx - x) / d) * speed, vy: ((ty - y) / d) * speed, size, trail: [], message, glow: COLOR_GLOWS[message.color].star });
+            shootingStars.push({ x, y, sx: x, sy: y, cx, cy, tx, ty, age: 0, dur: flightSteps(), size, trail: [], message, glow: COLOR_GLOWS[message.color].star });
         }
 
         function explode(x, y, message) {
@@ -311,9 +354,14 @@
             for (let i = shootingStars.length - 1; i >= 0; i--) {
                 const s = shootingStars[i];
                 s.trail.push({ x: s.x, y: s.y });
-                if (s.trail.length > 30) s.trail.shift();
-                s.x += s.vx; s.y += s.vy;
-                if (len(s.x - s.tx, s.y - s.ty) < 20) {
+                if (s.trail.length > 46) s.trail.shift(); // Cola larga, para que se note de lejos
+                s.age++;
+                const t = Math.min(1, s.age / s.dur);
+                const e = 1 - Math.pow(1 - t, 1.7);   // Entra con impulso y frena al llegar
+                const u = 1 - e;
+                s.x = u * u * s.sx + 2 * u * e * s.cx + e * e * s.tx;
+                s.y = u * u * s.sy + 2 * u * e * s.cy + e * e * s.ty;
+                if (t >= 1) {
                     explode(s.tx, s.ty, s.message);
                     showMessage(s.message);
                     lightsReceived++;
@@ -423,8 +471,9 @@
                     ctx.drawImage(glow, pt.x - size / 2, pt.y - size / 2, size, size);
                 });
                 ctx.globalAlpha = 1;
-                const size = s.size * 2.6;
+                const size = s.size * 2.6 * (s.message ? 1 + 0.12 * Math.sin(steps * 0.22 + s.size) : 1);
                 ctx.drawImage(glow, s.x - size / 2, s.y - size / 2, size, size);
+                if (s.message) { const core = size * 0.35; ctx.drawImage(STAR_GLOW, s.x - core / 2, s.y - core / 2, core, core); }
             }
             // Luces viajando a su lugar
             for (const j of joiners) {
@@ -441,7 +490,6 @@
         const seenIds = new Set(); // Para no repetir un mensaje si la conexión se reinicia
         let lastStarTime = -Infinity;
         let crowd = false;         // Modo "mucha gente"
-        const SOON_STEPS = 90;     // ~1.5 s: lo que tarda una estrella en llegar al corazón
         // Dónde sale cada mensaje cuando hay varios a la vez (arriba, abajo y al centro), en proporción al tamaño de la pantalla
         const LANES = [-0.2, 0.2, 0];
 
@@ -511,9 +559,10 @@
 
         const lanesAllowed = () => !crowd ? 1 : (starQueue.length + textQueue.length >= CROWD_FULL ? 3 : 2);
 
-        // Cuántos mensajes más caben en pantalla ahora o en el próximo segundo y medio
+        // Cuántos mensajes más caben en pantalla ahora o antes de que llegue el siguiente cometa
         function roomSoon() {
-            const busy = shownTexts.filter(m => m.duration - m.age > SOON_STEPS);
+            // (cuenta lo que tarda el cometa en llegar, para que su mensaje salga justo al llegar)
+            const busy = shownTexts.filter(m => m.duration - m.age > flightSteps());
             if (!crowd) return busy.length === 0 ? 1 : 0;
             if (busy.some(m => !m.small)) return 0;
             return Math.max(0, lanesAllowed() - busy.length);
