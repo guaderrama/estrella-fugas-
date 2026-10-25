@@ -182,9 +182,8 @@
         import { getFirestore, collection, doc, setDoc, onSnapshot, query, where, getCountFromServer, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { firebaseConfig, MESSAGES_COLLECTION, HISTORY_COLLECTION, STATE_DOC, MAX_MESSAGE_CHARS, LIGHT_COLORS, DEFAULT_COLOR } from "./firebase-config.js";
+        import { paintSky, heartX, heartY, ARCO_BOX, paintArco, drawWhale } from "./escena.js";
 
-        // Pintura del artista que sirve de fondo para la imagen de recuerdo
-        const SOUVENIR_BACKGROUND = 'https://firebasestorage.googleapis.com/v0/b/instalacionmariposas.firebasestorage.app/o/C5ABD578-447A-4160-BA4A-7EA2819A924C.png?alt=media&token=959ecc5c-8e0e-4845-82a9-b4b076b5628d';
         const SEND_TIMEOUT_MS = 8000;        // Si el servidor no confirma en este tiempo, se avisa en vez de quedarse esperando
         const WATCH_MAX_MS = 20 * 60 * 1000; // Se deja de seguir la luz después de 20 minutos
         const FULL_CHARGE_MS = 1500;         // Lo que tarda la estrella en cargarse al máximo al mantenerla presionada
@@ -554,10 +553,8 @@
         }
 
         // ================= Recuerdo tamaño historia (1080 × 1920) =================
-        const backgroundImage = new Image();
-        backgroundImage.crossOrigin = 'anonymous';
-        const backgroundReady = new Promise((resolve) => { backgroundImage.onload = () => resolve(true); backgroundImage.onerror = () => resolve(false); });
-        backgroundImage.src = SOUVENIR_BACKGROUND;
+        // Es la misma escena de la pantalla grande: cielo con Vía Láctea, el corazón de luces con el cometa y la luz de la persona
+        // en su color, y abajo el mar de Los Cabos con El Arco y la ballena con su ballenato
         const fontsReady = Promise.all([document.fonts.load(`italic 500 64px ${SERIF}`), document.fonts.load(`italic 600 64px ${SERIF}`)]).catch(() => {});
 
         function wrapText(ctx, text, maxWidth) {
@@ -578,63 +575,144 @@
             return lines;
         }
 
+        // Brillo redondo pre-dibujado (como las luces de la pantalla)
+        function glowSprite(rgb, core = 1, edge = 0.4) {
+            const g = document.createElement('canvas'); g.width = g.height = 64;
+            const x = g.getContext('2d');
+            const grad = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+            grad.addColorStop(0, `rgba(${rgb}, ${core})`); grad.addColorStop(0.3, `rgba(${rgb}, ${core * 0.85})`);
+            grad.addColorStop(0.42, `rgba(${rgb}, ${edge})`); grad.addColorStop(1, `rgba(${rgb}, 0)`);
+            x.fillStyle = grad; x.fillRect(0, 0, 64, 64);
+            return g;
+        }
+
+        // La escena se pinta una sola vez por mensaje (es lo pesado); cuando llega el número de luz solo se vuelve a poner la firma
+        let souvenirBase = null; // { key, canvas }
+        function paintSouvenirScene(text, rgb) {
+            const W = 1080, H = 1920, HY = 1460;              // HY: el horizonte del mar
+            const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+            const c = canvas.getContext('2d');
+            const rr = (a, b) => a + Math.random() * (b - a);
+            const col = rgb.join(', ');
+            // 1) Cielo
+            paintSky(c, W, H, HY);
+            // 2) Corazón de luces, con su punta tocando el mar
+            const k = 25, cx = W / 2, cy = HY - 14.5 * 1.1 * k - 16;
+            const whites = [glowSprite('255, 255, 255', 0.9, 0.35), glowSprite('200, 220, 255', 0.9, 0.35), glowSprite('255, 248, 205', 0.9, 0.35)];
+            const others = Object.values(LIGHT_COLORS).map(({ rgb: o }) => glowSprite(o.join(', '), 1, 0.5));
+            const dots = [];
+            for (let i = 0; i < 1250; i++) {
+                const t = rr(0, Math.PI * 2), a = rr(0, Math.PI * 2), d = rr(0, 22) * Math.sqrt(Math.random());
+                const x = cx + heartX(t) * k + Math.cos(a) * d, y = cy + heartY(t) * k * 1.1 + Math.sin(a) * d;
+                const colored = Math.random() < 0.06; // Otras luces de la gente, de colores
+                const size = colored ? rr(11, 16) : rr(4, 11);
+                dots.push({ x, y, size, sprite: colored ? others[Math.floor(Math.random() * others.length)] : whites[Math.floor(Math.random() * 3)], colored });
+            }
+            // Constelación: líneas finas entre las luces de colores cercanas
+            const coloredDots = dots.filter(d => d.colored);
+            c.strokeStyle = 'rgba(255, 236, 200, 0.2)'; c.lineWidth = 1.2; c.beginPath();
+            for (const d of coloredDots) {
+                const near = coloredDots.filter(o => o !== d).map(o => [o, (o.x - d.x) ** 2 + (o.y - d.y) ** 2]).filter(([, d2]) => d2 < 170 * 170).sort((a, b) => a[1] - b[1]).slice(0, 2);
+                for (const [o] of near) { c.moveTo(d.x, d.y); c.lineTo(o.x, o.y); }
+            }
+            c.stroke();
+            for (const d of dots) c.drawImage(d.sprite, d.x - d.size, d.y - d.size, d.size * 2, d.size * 2);
+            // 3) El cometa de la persona llegando a su luz, en su color
+            const lt = 1.6; const lx = cx + heartX(lt) * k, ly = cy + heartY(lt) * k * 1.1;
+            const trail = glowSprite(col, 1, 0.5); const white = glowSprite('255, 255, 245', 1, 0.6);
+            const p0 = [90, 600], p1 = [420, 560];
+            for (let i = 0; i <= 70; i++) {
+                const t = i / 70, u = 1 - t;
+                const x = u * u * p0[0] + 2 * u * t * p1[0] + t * t * lx, y = u * u * p0[1] + 2 * u * t * p1[1] + t * t * ly;
+                const size = 4 + t * 22;
+                c.globalAlpha = 0.08 + t * 0.55;
+                c.drawImage(trail, x - size, y - size, size * 2, size * 2);
+            }
+            c.globalAlpha = 1;
+            // Su luz en el corazón: halo de su color, centro blanco, un anillo y destellos en cruz
+            c.drawImage(trail, lx - 80, ly - 80, 160, 160);
+            c.drawImage(white, lx - 22, ly - 22, 44, 44);
+            c.strokeStyle = `rgba(${col}, 0.45)`; c.lineWidth = 2; c.beginPath(); c.arc(lx, ly, 46, 0, Math.PI * 2); c.stroke();
+            for (const [dx, dy, l] of [[1, 0, 70], [0, 1, 70], [0.7, 0.7, 34], [0.7, -0.7, 34]]) {
+                const g = c.createLinearGradient(lx - dx * l, ly - dy * l, lx + dx * l, ly + dy * l);
+                g.addColorStop(0, 'rgba(255, 255, 255, 0)'); g.addColorStop(0.5, 'rgba(255, 255, 255, 0.9)'); g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                c.strokeStyle = g; c.lineWidth = 2; c.beginPath(); c.moveTo(lx - dx * l, ly - dy * l); c.lineTo(lx + dx * l, ly + dy * l); c.stroke();
+            }
+            // 4) El mar
+            const sea = c.createLinearGradient(0, HY, 0, H);
+            sea.addColorStop(0, '#0c0c2c'); sea.addColorStop(1, '#020210');
+            c.fillStyle = sea; c.fillRect(0, HY, W, H - HY);
+            // Reflejo de la punta del corazón, temblando
+            for (const d of dots) {
+                const dist = HY - d.y;
+                if (dist < 0 || dist > 170) continue;
+                c.globalAlpha = 0.32 * (1 - dist / 170);
+                const wob = Math.sin(dist * 0.09) * (2 + dist * 0.04);
+                c.drawImage(d.sprite, d.x + wob - d.size, HY + dist * 0.9 - d.size, d.size * 2, d.size * 2);
+            }
+            c.globalAlpha = 1;
+            // 5) El Arco a la derecha, con su reflejo ondulado
+            const ak = 0.44, aw = ARCO_BOX.w * ak, ah = (ARCO_BOX.sea - ARCO_BOX.top) * ak;
+            const ax = W - aw, ay = HY - ah + 3;
+            const arco = document.createElement('canvas'); arco.width = Math.ceil(aw) + 4; arco.height = Math.ceil(ah) + 6;
+            paintArco(arco.getContext('2d'), ak, 2, 2, ah);
+            const refl = document.createElement('canvas'); refl.width = arco.width; refl.height = arco.height;
+            const r = refl.getContext('2d');
+            r.setTransform(1, 0, 0, -1, 0, refl.height); r.drawImage(arco, 0, 0); r.setTransform(1, 0, 0, 1, 0, 0);
+            r.globalCompositeOperation = 'destination-in';
+            const fade = r.createLinearGradient(0, 0, 0, refl.height);
+            fade.addColorStop(0, 'rgba(0, 0, 0, 0.55)'); fade.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            r.fillStyle = fade; r.fillRect(0, 0, refl.width, refl.height);
+            for (let y = 0; y < refl.height; y += 6) c.drawImage(refl, 0, y, refl.width, 6, ax - 2 + Math.sin(y * 0.18) * (1 + y * 0.03), HY + y, refl.width, 6);
+            c.drawImage(arco, ax - 2, ay - 2);
+            // 6) La ballena y su ballenato nadando
+            const ws = 0.8, wx = 300, wy = 1690;
+            drawWhale(c, wx + 64 * ws, wy - 36 * ws, ws * 0.45, 1, 2.2, 0.9);
+            drawWhale(c, wx, wy, ws, 1, 0.8, 1);
+            // Olas y la línea del horizonte
+            c.lineWidth = 1.5;
+            for (let i = 0; i < 5; i++) {
+                const y = HY + 40 + i * 85; c.beginPath();
+                for (let x = 0; x <= W; x += 20) { const yy = y + Math.sin(x * 0.012 + i * 1.7) * (3 + i); x ? c.lineTo(x, yy) : c.moveTo(x, yy); }
+                c.strokeStyle = `rgba(180, 190, 255, ${(0.08 - i * 0.01).toFixed(2)})`; c.stroke();
+            }
+            c.fillStyle = 'rgba(190, 180, 255, 0.18)'; c.fillRect(0, HY, W, 2);
+            // 7) El mensaje arriba, grande y con brillo de su color (más pequeño si es largo)
+            c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.fillStyle = 'rgba(255, 233, 184, 0.92)'; c.font = `italic 600 44px ${SERIF}`;
+            c.fillText('Mural de Luz · Los Cabos', W / 2, 250);
+            const chars = Array.from(text).length;
+            const size = chars <= 40 ? 80 : chars <= 85 ? 66 : 56;
+            c.font = `italic 500 ${size}px ${SERIF}`;
+            const lines = wrapText(c, `“${text}”`, 900).slice(0, 6);
+            const lh = size * 1.22; const top = 470 - ((lines.length - 1) * lh) / 2;
+            c.shadowColor = `rgba(${col}, 0.75)`; c.shadowBlur = 30; c.fillStyle = '#fff6e0';
+            lines.forEach((l, i) => c.fillText(l, W / 2, top + i * lh));
+            c.shadowBlur = 0;
+            return canvas;
+        }
+
         let souvenirJob = 0;
         async function makeSouvenir() {
             const job = ++souvenirJob;
             const text = currentText; const rgb = LIGHT_COLORS[colorId].rgb; const number = lightNumber;
             await fontsReady;
-            const hasBackground = await Promise.race([backgroundReady, new Promise(r => setTimeout(() => r(false), 4000))]);
             if (job !== souvenirJob) return;
+            const key = `${text}|${colorId}`;
+            if (!souvenirBase || souvenirBase.key !== key) souvenirBase = { key, canvas: paintSouvenirScene(text, rgb) };
             const W = 1080, H = 1920;
             const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
             const c = canvas.getContext('2d');
-            // Fondo: la pintura del artista, cubriendo todo y oscurecida para que se lea el mensaje
-            c.fillStyle = '#06061a'; c.fillRect(0, 0, W, H);
-            if (hasBackground && backgroundImage.complete && backgroundImage.naturalWidth) {
-                const s = Math.max(W / backgroundImage.width, H / backgroundImage.height);
-                const bw = backgroundImage.width * s, bh = backgroundImage.height * s;
-                c.drawImage(backgroundImage, (W - bw) / 2, (H - bh) / 2, bw, bh);
-            }
-            const shade = c.createLinearGradient(0, 0, 0, H);
-            shade.addColorStop(0, 'rgba(4, 4, 18, 0.55)'); shade.addColorStop(0.5, 'rgba(4, 4, 18, 0.62)'); shade.addColorStop(1, 'rgba(4, 4, 18, 0.88)');
-            c.fillStyle = shade; c.fillRect(0, 0, W, H);
-            // Estrellitas
-            for (let i = 0; i < 160; i++) {
-                c.fillStyle = `rgba(255, 255, 255, ${(0.15 + Math.random() * 0.5).toFixed(2)})`;
-                c.beginPath(); c.arc(Math.random() * W, Math.random() * H, Math.random() * 1.8 + 0.4, 0, Math.PI * 2); c.fill();
-            }
-            // Corazón de luces, con la luz de la persona brillando en su color
-            const cx = W / 2, cy = 640, k = 21;
-            const hx = (t) => 16 * Math.pow(Math.sin(t), 3);
-            const hy = (t) => -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
-            for (let i = 0; i < 420; i++) {
-                const t = Math.random() * Math.PI * 2, j = Math.random() * 16;
-                const a = Math.random() * Math.PI * 2;
-                const x = cx + hx(t) * k + Math.cos(a) * j, y = cy + hy(t) * k * 1.05 + Math.sin(a) * j;
-                c.fillStyle = `rgba(255, ${235 + Math.floor(Math.random() * 20)}, ${200 + Math.floor(Math.random() * 55)}, ${(0.35 + Math.random() * 0.55).toFixed(2)})`;
-                c.beginPath(); c.arc(x, y, Math.random() * 2.6 + 1, 0, Math.PI * 2); c.fill();
-            }
-            const st = 0.55;
-            const sx = cx + hx(st) * k, sy = cy + hy(st) * k * 1.05;
-            const glow = c.createRadialGradient(sx, sy, 0, sx, sy, 90);
-            glow.addColorStop(0, 'rgba(255, 255, 255, 1)'); glow.addColorStop(0.12, `rgba(${rgb.join(',')}, 1)`); glow.addColorStop(0.4, `rgba(${rgb.join(',')}, 0.35)`); glow.addColorStop(1, `rgba(${rgb.join(',')}, 0)`);
-            c.fillStyle = glow; c.beginPath(); c.arc(sx, sy, 90, 0, Math.PI * 2); c.fill();
-            // El mensaje
+            c.drawImage(souvenirBase.canvas, 0, 0);
+            // Firma: número de luz y fecha, y la galería
             c.textAlign = 'center'; c.textBaseline = 'middle';
-            c.font = `italic 500 66px ${SERIF}`;
-            const lines = wrapText(c, `“${text}”`, 880).slice(0, 6);
-            const lh = 82; const top = 1230 - ((lines.length - 1) * lh) / 2;
-            c.shadowColor = `rgba(${rgb.join(',')}, 0.7)`; c.shadowBlur = 28; c.fillStyle = '#fff6e0';
-            lines.forEach((l, i) => c.fillText(l, W / 2, top + i * lh));
-            c.shadowBlur = 0;
-            // Firma
-            c.fillStyle = 'rgba(255, 233, 184, 0.95)'; c.font = `italic 600 54px ${SERIF}`;
-            c.fillText('Mural de Luz', W / 2, H - 300);
-            c.fillStyle = 'rgba(245, 241, 230, 0.85)'; c.font = `400 32px ${SANS}`;
             const date = new Date().toLocaleDateString(lang === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' });
-            c.fillText(number ? `${T().souvenirLight(number)} · ${date}` : date, W / 2, H - 236);
-            c.fillStyle = 'rgba(245, 241, 230, 0.75)'; c.font = `400 30px ${SANS}`;
-            c.fillText('Iván Guaderrama Gallery · @ivanguaderramaart', W / 2, H - 180);
+            c.shadowColor = 'rgba(0, 0, 0, 0.6)'; c.shadowBlur = 12;
+            c.fillStyle = '#ffe9b8'; c.font = `italic 500 46px ${SERIF}`;
+            c.fillText(number ? `${T().souvenirLight(number)} · ${date}` : date, W / 2, 1545);
+            c.fillStyle = 'rgba(245, 241, 230, 0.85)'; c.font = `400 28px ${SANS}`;
+            c.fillText('Iván Guaderrama Gallery · @ivanguaderramaart', W / 2, 1600);
+            c.shadowBlur = 0;
 
             const url = canvas.toDataURL('image/png');
             if (job !== souvenirJob) return;
@@ -686,6 +764,11 @@
             countdownTimers.push(setTimeout(() => box.classList.remove('show'), 3900));
         }
         $('countdown').addEventListener('click', () => $('countdown').classList.remove('show'));
+
+        // Herramienta de prueba (?debug): genera el recuerdo sin mandar ningún mensaje al mural
+        if (new URLSearchParams(location.search).has('debug')) {
+            window.controlDebug = { souvenir: (text, color = DEFAULT_COLOR, number = null) => { currentText = text; setColor(color); lightNumber = number; showView('done'); return makeSouvenir(); } };
+        }
 
         // ================= Inicio =================
         applyLanguage();
